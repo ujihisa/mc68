@@ -16,6 +16,7 @@
     (def swank* (swank.swank/start-repl 4005))))
 
 (defn async-player-chat-event [evt]
-  (let [pname (.getName (.getEntity evt))]
+  (let [pname (.getName (.getPlayer evt))]
     (when-let [msg (second (first (re-seq #"^t:\s(.*)" (.getMessage evt))))]
-      (tweet-mc68 (format "<%s>: %s" pname msg)))))
+      (future
+        (tweet-mc68 (format "<%s>: %s" pname msg))))))
