@@ -4,5 +4,9 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.4.0"]
-                 [twitter-api "0.6.13"]]
-  :main mc68.core)
+                 [twitter-api "0.6.13"]
+                 [org.bukkit/bukkit "1.4.5-R0.3-SNAPSHOT"]
+                 [swank-clojure/swank-clojure "1.4.2"]]
+  :repositories {"org.bukkit"
+                 "http://repo.bukkit.org/service/local/repositories/snapshots/content/"}
+  :java-source-paths ["javasrc"])

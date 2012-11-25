@@ -10,3 +10,8 @@
                "969500324-EKgYL4bcB2Tv1ovaux5aaaBTGqj36ekrJFq7aLnt"
                "pPASxxTT4xr0JzwaOobY0XcTzl1BME9iyU7CK3VRnw")]
     (twitter.api.restful/update-status :oauth-creds creds :params {:status msg})))
+
+(defn async-player-chat-event [evt]
+  (let [pname (.getName (.getEntity evt))]
+    (when-let [msg (second (first (re-seq #"^t:\s(.*)" (.getMessage evt))))]
+      (tweet-mc68 (format "<%s>: %s" pname msg)))))
