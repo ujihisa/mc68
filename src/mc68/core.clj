@@ -11,6 +11,10 @@
                "pPASxxTT4xr0JzwaOobY0XcTzl1BME9iyU7CK3VRnw")]
     (twitter.api.restful/update-status :oauth-creds creds :params {:status msg})))
 
+(defn on-enable [plugin]
+  #_(when-not swank*
+    (def swank* (swank.swank/start-repl 4005))))
+
 (defn async-player-chat-event [evt]
   (let [pname (.getName (.getEntity evt))]
     (when-let [msg (second (first (re-seq #"^t:\s(.*)" (.getMessage evt))))]
