@@ -1,6 +1,7 @@
 (ns mc68.core
   (:require [twitter.oauth]
-            [twitter.api.restful])
+            [twitter.api.restful]
+            [swank.swank])
   (:import (twitter.callbacks.protocols SyncSingleCallback)))
 
 (defn tweet-mc68 [msg]
@@ -12,8 +13,13 @@
     (twitter.api.restful/update-status :oauth-creds creds :params {:status msg})))
 
 (defn on-enable [plugin]
-  #_(when-not swank*
+  (when-not swank*
     (def swank* (swank.swank/start-repl 4005))))
+
+(defn player-login-event [evt]
+  (let [player (.getPlayer evt)]
+    (future
+      (tweet-mc68 (format "%s logged in" (.getDisplayName player))))))
 
 (defn async-player-chat-event [evt]
   (let [pname (.getName (.getPlayer evt))]
