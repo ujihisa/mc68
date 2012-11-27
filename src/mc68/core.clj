@@ -26,5 +26,5 @@
 (defonce swank* nil)
 (defn on-enable [plugin]
   (when-not swank*
-    (def swank* (swank.swank/start-repl 4005))))
+    (def swank* (swank.swank/start-repl 4006))))
 
