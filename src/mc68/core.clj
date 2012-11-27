@@ -12,10 +12,6 @@
                "pPASxxTT4xr0JzwaOobY0XcTzl1BME9iyU7CK3VRnw")]
     (twitter.api.restful/update-status :oauth-creds creds :params {:status msg})))
 
-(defn on-enable [plugin]
-  (when-not swank*
-    (def swank* (swank.swank/start-repl 4005))))
-
 (defn player-login-event [evt]
   (let [player (.getPlayer evt)]
     (future
@@ -26,3 +22,9 @@
     (when-let [msg (second (first (re-seq #"^t:\s(.*)" (.getMessage evt))))]
       (future
         (tweet-mc68 (format "<%s>: %s" pname msg))))))
+
+(defonce swank* nil)
+(defn on-enable [plugin]
+  (when-not swank*
+    (def swank* (swank.swank/start-repl 4005))))
+
