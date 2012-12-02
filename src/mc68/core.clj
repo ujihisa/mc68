@@ -47,7 +47,6 @@
   (let [projectile (.getEntity evt)
         shooter (.getShooter projectile)]
     (when (and
-            (not @egg-throwing)
             (instance? org.bukkit.entity.Egg projectile)
             (instance? org.bukkit.entity.Player shooter)
             (= org.bukkit.Material/EGG (.getType (.getItemInHand shooter))))
@@ -62,6 +61,21 @@
           i))
       (.setItemInHand shooter nil)
       #_(.sendMessage shooter (format "egg %d" (.getAmount (.getItemInHand shooter)))))))
+
+(defn player-move-event [evt]
+  (let [player (.getPlayer evt)]
+    (when (and
+            (.isSneaking player)
+            (= org.bukkit.Material/LADDER (.getType (.getBlock (.getLocation player))))
+            (< (.getY (.getFrom evt)) (.getY (.getTo evt))))
+      (if (= 15 (.getLightFromSky (.getBlock (.getLocation player))))
+        (let [n (if (= org.bukkit.Material/LADDER (.getType (.getBlock (.add (.getLocation player) 0 1 0))))
+                  (if (= org.bukkit.Material/LADDER (.getType (.getBlock (.add (.getLocation player) 0 2 0))))
+                    3
+                    2)
+                  1)]
+          (.teleport player (doto (.getTo evt) (.add 0 n 0))))
+        (.setVelocity player (org.bukkit.util.Vector. 0 5 0))))))
 
 (defn player-login-event [evt]
   (let [player (.getPlayer evt)]
