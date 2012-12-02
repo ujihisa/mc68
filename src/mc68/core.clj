@@ -40,6 +40,29 @@
                    (hp2damage (.getHealth shooter)))
                  shooter)))))
 
+(defonce plugin* nil)
+
+#_(def egg-throwing (ref false))
+(defn projectile-launch-event [evt]
+  (let [projectile (.getEntity evt)
+        shooter (.getShooter projectile)]
+    (when (and
+            (not @egg-throwing)
+            (instance? org.bukkit.entity.Egg projectile)
+            (instance? org.bukkit.entity.Player shooter)
+            (= org.bukkit.Material/EGG (.getType (.getItemInHand shooter))))
+      #_(.sendMessage shooter (format "egg %d" (.getAmount (.getItemInHand shooter))))
+      #_(dotimes [_ (.getAmount (.getItemInHand shooter))]
+        (.launchProjectile shooter org.bukkit.entity.Egg))
+      (dotimes [i (.getAmount (.getItemInHand shooter))]
+        (.scheduleSyncDelayedTask
+          (Bukkit/getScheduler)
+          plugin*
+          #(.launchProjectile shooter org.bukkit.entity.Egg)
+          i))
+      (.setItemInHand shooter nil)
+      #_(.sendMessage shooter (format "egg %d" (.getAmount (.getItemInHand shooter)))))))
+
 (defn player-login-event [evt]
   (let [player (.getPlayer evt)]
     (future
@@ -54,7 +77,6 @@
         (tweet-mc68 (format "<%s>: %s" pname msg))))))
 
 (defonce swank* nil)
-(defonce plugin* nil)
 (defn on-enable [plugin]
   (def plugin* plugin)
   (when-not swank*
