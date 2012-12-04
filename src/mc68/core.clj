@@ -62,6 +62,60 @@
       (.setItemInHand shooter nil)
       #_(.sendMessage shooter (format "egg %d" (.getAmount (.getItemInHand shooter)))))))
 
+(defn player-interact-event [evt]
+  (when (and
+          (.getPlayer evt)
+          (= org.bukkit.Material/AIR (.getType (.getItemInHand (.getPlayer evt)))))
+    (let [block (.getClickedBlock evt)]
+      (when (= org.bukkit.Material/WOOL (.getType block))
+        (.setData block (mod (inc (.getData block)) 8))))))
+
+(def random-block-candidates
+  [org.bukkit.Material/SANDSTONE org.bukkit.Material/CLAY]
+  #_( org.bukkit.Material/NETHERRACK))
+
+(defn explosion-prime-event [evt]
+  (when (instance? org.bukkit.entity.TNTPrimed (.getEntity evt))
+    "default tnt radius is 4"
+    (.setRadius evt 5)))
+
+(defn tnt-explode-event-without-lapis [evt]
+  (let [blocks (vec (.blockList evt))]
+    (doseq [block blocks]
+      (let [fblock (.spawnFallingBlock (.getWorld block) (.getLocation block) (.getType block) (.getData block))]
+        (.setVelocity fblock (doto (.getVelocity fblock) (.add (org.bukkit.util.Vector. (/ (rand) 2.0) (rand) (/ (rand) 2.0))))))
+      (.setType block org.bukkit.Material/AIR))
+    #_(when (not-empty (filter #(= org.bukkit.Material/GOLD_BLOCK (.getType %)) blocks))
+      (.setCancelled evt true)
+      (doseq [block blocks]
+        (.setType block (rand-nth random-block-candidates))))))
+
+(defn entity-explode-event [evt]
+  (when (instance? org.bukkit.entity.TNTPrimed (.getEntity evt))
+    (let [lapises (filter #(= org.bukkit.Material/LAPIS_BLOCK (.getType %)) (vec (.blockList evt)))]
+      (if (empty? lapises)
+        (tnt-explode-event-without-lapis evt)
+        (do
+          (.setCancelled evt true)
+          (doseq [lapis lapises
+                  :let [loc (.getLocation lapis)]
+                  [x y z loc-around] (for [[x y z] [[0 0 1] [0 1 0] [1 0 0] [0 0 -1] [0 -1 0] [-1 0 0]]]
+                                       [x y z (.add (.clone loc) x y z)])
+                  :when (#{org.bukkit.Material/REDSTONE_TORCH_ON org.bukkit.Material/REDSTONE_TORCH_OFF}
+                          (.getType (.getBlock loc-around)))
+                  :let [[replace-to-type replace-to-data] (let [replace-to (.getBlock (.add (.clone loc-around) x y z))]
+                                                            [(.getType replace-to) (.getData replace-to)])
+                        [blocks-line blocks-leftover] (split-with #(not= org.bukkit.Material/LAPIS_BLOCK (.getType %))
+                                                                  (map #(.getBlock %)
+                                                                       (take 200 (iterate #(doto % (.add x y z)) (.clone loc-around)))))]
+                  :when (not (#{org.bukkit.Material/DIAMOND_ORE org.bukkit.Material/DIAMOND_BLOCK} replace-to-type))
+                  :when (when-let [firstleftover (first blocks-leftover)]
+                          (= org.bukkit.Material/LAPIS_BLOCK (.getType firstleftover)))]
+            (.strikeLightningEffect (.getWorld loc-around) loc-around)
+            (doseq [block blocks-line]
+              (.setType block replace-to-type)
+              (.setData block replace-to-data))))))))
+
 (defn player-move-event [evt]
   (let [player (.getPlayer evt)]
     (when (and
