@@ -62,6 +62,8 @@
   (Bukkit/getPlayer "ast924"))
 (defn raa []
   (Bukkit/getPlayer "raa0121"))
+(defn bgnori []
+  (Bukkit/getPlayer "bgnori"))
 
 (def special-arrows (atom #{}))
 (defn projectile-hit-event [evt]
@@ -96,6 +98,23 @@
           :else nil)
         nil)
       nil)))
+
+(def magic-point (atom {}))
+
+(def show-current-mp-last (atom {}))
+(defn show-current-mp [player]
+  (let [pname (.getDisplayName player)
+        mp (@magic-point pname)]
+    (when (not= (@show-current-mp-last pname) mp)
+      (.sendMessage player (format "Current MP: %d" mp))
+      (swap! show-current-mp-last assoc pname mp))))
+
+(defn player-item-held-event [evt]
+  (let [player (.getPlayer evt)
+        new-slot (.getNewSlot evt)]
+    (when-let [item (get (.getContents (.getInventory player)) new-slot)]
+      (when (= Material/BOOK_AND_QUILL (.getType item))
+        (show-current-mp player)))))
 
 (def skeleton-shooting (ref false))
 (defn projectile-launch-event [evt]
@@ -145,6 +164,10 @@
           (swap! special-arrows conj projectile))
         nil)
       nil)))
+
+(defn player-bed-enter-event [evt]
+  (let [player (.getPlayer evt)]
+    (swap! magic-point assoc (.getDisplayName player) 20)))
 
 (defn entity-shoot-bow-event [evt]
   #_(prn 'ok evt))
@@ -508,7 +531,9 @@
 (defn player-login-event [evt]
   (let [player (.getPlayer evt)]
     (future
-      (tweet-mc68 (format "%s logged in" (.getDisplayName player))))))
+      (let [pname (.getDisplayName player)]
+        (swap! magic-point assoc pname (get @magic-point pname 20))
+        (tweet-mc68 (format "%s logged in" pname))))))
 
 (defn async-player-chat-event [evt]
   (let [pname (.getName (.getPlayer evt))
@@ -538,6 +563,14 @@
     (ref-set stack xs)
     x))
 
+(defn ml-using-mp [player mp f]
+  (let [new-mp (- (@magic-point (.getDisplayName player)) mp)]
+    (if (< 0 new-mp)
+      (do
+        (swap! magic-point assoc (.getDisplayName player) new-mp)
+        (f))
+      (.sendMessage player "No MP left!"))))
+
 (defn ml-eval [player target token stack]
   (dosync
     (if
@@ -561,25 +594,28 @@
                            (.getLocation x2))]
                 (ml-push (.toVector (.subtract (.clone loc1) loc2))
                          stack))
-        'accelerate (let [x1 (ml-pop stack)
-                          x2 (ml-pop stack)]
-                      (.setVelocity x1
-                                    (let [v (.getVelocity x1)]
-                                      (.add v x2)
-                                      (.setX v (* 0.3 (.getX v)))
-                                      (.setZ v (* 0.3 (.getZ v)))
-                                      (.setY v (min 0.75 (.getY v))))))
+        'accelerate (ml-using-mp
+                      player 2
+                      (fn []
+                        (let [x1 (ml-pop stack)
+                              x2 (ml-pop stack)]
+                          (.setVelocity x1
+                                        (let [v (.getVelocity x1)]
+                                          (.add v x2)
+                                          (.setX v (* 0.3 (.getX v)))
+                                          (.setZ v (* 0.3 (.getZ v)))
+                                          (.setY v (min 0.75 (.getY v))))))))
         'up (let [x (ml-pop stack)
                   loc (if (instance? Location x)
                         x
                         (.getLocation x))]
               (ml-push (.add (.clone loc) 0 1 0) stack))
         'down (let [x (ml-pop stack)
-                  loc (if (instance? Location x)
-                        x
-                        (.getLocation x))]
-              (ml-push (.add (.clone loc) 0 -1 0) stack))
-        'up (ml-push (.getHealth (ml-pop stack)) stack)
+                    loc (if (instance? Location x)
+                          x
+                          (.getLocation x))]
+                (ml-push (.add (.clone loc) 0 -1 0) stack))
+        'hp (ml-push (.getHealth (ml-pop stack)) stack)
         (prn 'must-not-happen token)))))
 
 (defn player-use-book-event [player target book]
@@ -590,7 +626,8 @@
       (later
         (try
           (doseq [token tokens]
-            (ml-eval player target token stack))
+            (ml-eval player target token stack)
+            (show-current-mp player))
           (catch Exception e (prn e)))))))
 
 (defn entity-damage-event [evt]
