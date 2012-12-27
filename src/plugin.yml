@@ -3,4 +3,5 @@ main: mc68.ClojurePlugin
 version: 2.0.0
 website: http://ujihisa.blogspot.com
 author: Tatsuhiro Ujihisa
-description: twitter @mc68
+description: twitter @mc681
+#depend: [ControllableMobsAPI]

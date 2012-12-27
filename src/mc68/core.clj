@@ -25,16 +25,17 @@
            [org.bukkit.event.block Action]
            [org.bukkit.enchantments Enchantment])
   (:import #_(twitter.callbacks.protocols SyncSingleCallback)
-           [de.ntcomputer.minecraft.controllablemobs.api ControllableMobs]
+           #_([de.ntcomputer.minecraft.controllablemobs.api ControllableMobs]
            [de.ntcomputer.minecraft.controllablemobs.api.actions ActionState
             ActionType]
            [de.ntcomputer.minecraft.controllablemobs.api.aibehaviors
             EntityFilter AIAttackMelee AIAttackRanged AIBehavior AIFleeSun
             AIFloat AILookAtEntity AIRandomLookaround AIRandomStroll
             AIRestrictSun AITargetBehavior AITargetBehaviorEx AITargetHurtBy
-            AITargetNearest]))
+            AITargetNearest])))
 
 (defonce plugin* nil)
+(def creative (atom #{}))
 
 (defmacro later [& exps]
   `(.scheduleSyncDelayedTask
@@ -62,41 +63,99 @@
 (defn raa []
   (Bukkit/getPlayer "raa0121"))
 
+(def special-arrows (atom #{}))
 (defn projectile-hit-event [evt]
   (defn hp2damage [n]
     (inc (Math/pow (/ (- 20 n) 4) 2)))
   (let [proj (.getEntity evt)
         shooter (.getShooter proj)]
-    (when (and
-            (instance? Arrow proj)
-            (instance? Player shooter))
-      (doseq [t (.getNearbyEntities proj 5 3 5)
-              :when (instance? Monster t)]
-        (.damage t
-                 (if (= (ujm) shooter)
-                   19
-                   (hp2damage (.getHealth shooter)))
-                 shooter)))))
+    (condp instance? proj
+      Arrow
+      (condp instance? shooter
+        Player
+        (do
+          (when (@special-arrows proj)
+            (.remove proj))
+          (doseq [t (.getNearbyEntities proj 5 3 5)
+                :when (and
+                        (instance? Monster t)
+                        (not (instance? Giant t)))]
+          (.damage t
+                   (if (= (ujm) shooter)
+                     19
+                     (hp2damage (.getHealth shooter)))
+                   shooter)))
+        Skeleton
+        (cond
+          (= Material/GOLD_HELMET (.getType (.getHelmet (.getEquipment shooter))))
+          (do
+            (.teleport shooter (.getLocation proj))
+            (.remove proj))
+          (= Material/DIAMOND_HELMET (.getType (.getHelmet (.getEquipment shooter))))
+          (.remove proj)
+          :else nil)
+        nil)
+      nil)))
 
-#_(def egg-throwing (ref false))
+(def skeleton-shooting (ref false))
 (defn projectile-launch-event [evt]
   (let [projectile (.getEntity evt)
         shooter (.getShooter projectile)]
-    (when (and
-            (instance? Egg projectile)
-            (instance? Player shooter)
-            (= Material/EGG (.getType (.getItemInHand shooter))))
-      #_(.sendMessage shooter (format "egg %d" (.getAmount (.getItemInHand shooter))))
-      #_(dotimes [_ (.getAmount (.getItemInHand shooter))]
-        (.launchProjectile shooter Egg))
-      (dotimes [i (.getAmount (.getItemInHand shooter))]
-        (.scheduleSyncDelayedTask
-          (Bukkit/getScheduler)
-          plugin*
-          #(.launchProjectile shooter Egg)
-          i))
-      (.setItemInHand shooter nil)
-      #_(.sendMessage shooter (format "egg %d" (.getAmount (.getItemInHand shooter)))))))
+    (condp instance? projectile
+      Egg
+      (when (and
+              (instance? Player shooter)
+              (= Material/EGG (.getType (.getItemInHand shooter))))
+        #_(.sendMessage shooter (format "egg %d" (.getAmount (.getItemInHand shooter))))
+        #_(dotimes [_ (.getAmount (.getItemInHand shooter))]
+          (.launchProjectile shooter Egg))
+        (dotimes [i (.getAmount (.getItemInHand shooter))]
+          (.scheduleSyncDelayedTask
+            (Bukkit/getScheduler)
+            plugin*
+            #(.launchProjectile shooter Egg)
+            i))
+        (.setItemInHand shooter nil)
+        #_(.sendMessage shooter (format "egg %d" (.getAmount (.getItemInHand shooter)))))
+      Arrow
+      (condp instance? shooter
+        Skeleton
+        (when-not @skeleton-shooting
+          (cond
+            (= Material/IRON_HELMET (.getType (.getHelmet (.getEquipment shooter))))
+            (future
+              (dotimes [_ 5]
+                (Thread/sleep 500)
+                (later
+                  (dosync (ref-set skeleton-shooting true))
+                  (.launchProjectile shooter Arrow)
+                  (dosync (ref-set skeleton-shooting false)))))
+            (= Material/DIAMOND_HELMET (.getType (.getHelmet (.getEquipment shooter))))
+            (do
+              (dosync (ref-set skeleton-shooting true))
+              (dotimes [_ 80]
+                (let [rand1 (fn [] (* 0.8 (- (rand) 0.5)))
+                      new-arrow (.launchProjectile shooter Arrow)]
+                  (.setVelocity new-arrow (.add (.getVelocity projectile)
+                                                (Vector. (rand1) (rand1) (rand1))))))
+              (dosync (ref-set skeleton-shooting false)))
+            :else nil))
+        Player
+        (when (#{(ujm) (mozukusoba)} shooter)
+          (swap! special-arrows conj projectile))
+        nil)
+      nil)))
+
+(defn entity-shoot-bow-event [evt]
+  #_(prn 'ok evt))
+
+(defn- consume-item [player]
+  (when-not (@creative (.getName player))
+    (let [itemstack (.getItemInHand player)
+          amount (.getAmount itemstack)]
+      (if (= 1 amount)
+        (.remove (.getInventory player) itemstack)
+        (.setAmount itemstack (dec amount))))))
 
 (defn player-interact-entity-event [evt]
   (let [target (.getRightClicked evt)
@@ -106,6 +165,12 @@
       (when (= Material/FLINT_AND_STEEL (.getType (.getItemInHand player)))
         (.setCancelled evt true)
         (.setFireTicks target 800))
+      Zombie
+      (when (= Material/ROTTEN_FLESH (.getType (.getItemInHand player)))
+        (consume-item player)
+        (when (= 0 (rand-int 10))
+          (.spawn (.getWorld target) (.getLocation target) Giant)
+          (.remove target)))
       nil)))
 
 (def mozukusoba-house
@@ -120,28 +185,171 @@
   (Location. (Bukkit/getWorld "city")
              -45.0 66.0 81.0 0.0 0.0))
 
+(defn- blockface2loc [block]
+  (let [face (.getFacing (.getData (.getState block)))]
+    (.subtract (.getLocation block) (.getModX face) (.getModY face) (.getModZ face))))
+
+(def weapons
+  [Material/AIR
+   Material/WOOD_SWORD Material/WOOD_SWORD
+   Material/IRON_SWORD Material/IRON_SWORD
+   Material/GOLD_SWORD Material/GOLD_SWORD
+   Material/DIAMOND_SWORD
+   Material/BOW Material/BOW
+   Material/BOW])
+
+(defn creature-spawn-event [evt]
+  (let [entity (.getEntity evt)]
+    (condp instance? entity
+      Zombie
+      (when (= org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason/NATURAL (.getSpawnReason evt))
+        (when (= 0 (rand-int 10))
+          (.spawn (.getWorld entity) (.getLocation entity) Zombie))
+        (let [eq (.getEquipment entity)]
+          (.setItemInHand eq (ItemStack. (rand-nth weapons) 1))
+          (def helmets
+            {Material/AIR nil
+             Material/LEATHER_HELMET nil
+             Material/STONE_PLATE nil
+             Material/PUMPKIN nil
+             Material/TNT nil
+             Material/SKULL_ITEM (range 0 5)})
+          (let [[helmet data] (rand-nth (vec helmets))
+                is (ItemStack. helmet 1)]
+            (when data
+              (.setData (.getData is) (rand-nth data)))
+            (.setHelmet eq is))))
+      Skeleton
+      (when (= org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason/NATURAL (.getSpawnReason evt))
+        (case (rand-int 4)
+          0
+          (.setHelmet (.getEquipment entity) (ItemStack. Material/IRON_HELMET 1))
+          1
+          (.setHelmet (.getEquipment entity) (ItemStack. Material/GOLD_HELMET 1))
+          2
+          (.setHelmet (.getEquipment entity) (ItemStack. Material/DIAMOND_HELMET 1))
+          nil))
+      nil)))
+
+(defn item-spawn-event [evt]
+  (let [item (.getEntity evt)]
+    (when (= Material/STATIONARY_WATER (.getType (.getItemStack item)))
+      (.setCancelled evt true))))
+
+(defn block-physics-event [evt]
+  (comment (let [block (.getBlock evt)]
+    (when (and
+            (= Material/STATIONARY_WATER (.getChangedType evt))
+            (= (byte 7) (.getData block)))
+      (prn 'ok)))))
+
+(defn player-interact-block-event [evt player block]
+  (condp = (.getType block)
+    Material/STONE_PLATE
+    (when (= Action/PHYSICAL (.getAction evt))
+      (when (every? (fn [[x y z]]
+                      (= Material/GOLD_BLOCK (.getType (.getBlock (.add (.getLocation block) x y z)))))
+                    [[0 3 0] [2 0 0] [-2 0 0] [0 0 2] [0 0 -2]])
+        (if (= "world" (.getName (.getWorld player)))
+          (later
+            (.strikeLightningEffect (.getWorld block) (.getLocation block))
+            (.strikeLightningEffect (.getWorld city-entrance) city-entrance)
+            (.teleport player city-entrance)
+            (.teleport player city-entrance))
+          (later
+            (.strikeLightningEffect (.getWorld block) (.getLocation block))
+            (.strikeLightningEffect (.getWorld mozukusoba-house) mozukusoba-house)
+            (.teleport player mozukusoba-house)
+            (.teleport player mozukusoba-house)))))
+    Material/WOOL
+    (when (= Material/AIR (.getType (.getItemInHand player)))
+      (if (= Action/RIGHT_CLICK_BLOCK (.getAction evt))
+        (.setData block (mod (dec (.getData block)) 16))
+        (.setData block (mod (inc (.getData block)) 16))))
+    (do
+      #_(when (= (ujm) player)
+        (.sendMessage (ujm) "hi")
+        (doseq [x (range -20 20)
+                y (range -10 10)
+                z (range -20 20)
+                :let [b (.getBlock (.add (.getLocation (ujm)) x y z))]
+                :when (= Material/GOLD_BLOCK (.getType b))]
+          (doseq [y2 (range 0 30)
+                  :let [b2 (.getBlock (.add (.getLocation (ujm)) x (+ y y2) z))]]
+            (.setType b2 Material/STONE))))
+      (when (and
+            (#{Material/REDSTONE_TORCH_ON Material/REDSTONE_TORCH_OFF} (.getType block))
+            (= Material/GOLD_INGOT (.getType (.getItemInHand player))))
+      (let [block-to-copy (.getBlock (blockface2loc block))]
+        (when-not (#{Material/GOLD_BLOCK Material/GOLD_ORE Material/DIAMOND_ORE Material/DIAMOND_BLOCK}
+                    (.getType block-to-copy))
+          (consume-item player)
+          (.setType block Material/AIR)
+          (doseq [x (range -4 5) z (range -4 5)
+                  :let [b (.getBlock (.add (.clone (.getLocation block-to-copy)) x 0 z))]
+                  :when (#{Material/AIR Material/LONG_GRASS} (.getType b))]
+            (.playEffect (.getWorld b) (.getLocation b) Effect/MOBSPAWNER_FLAMES nil)
+            (.setType b (.getType block-to-copy))
+            (.setData b (.getData block-to-copy))
+            (when (= Material/MOB_SPAWNER (.getType block-to-copy))
+              (.setSpawnedType (.getState b) (.getSpawnedType (.getState block-to-copy)))))))))))
+
 (defn player-interact-event [evt]
   (let [player (.getPlayer evt)]
     (when-let [block (.getClickedBlock evt)]
-      (condp = (.getType block)
-        Material/STONE_PLATE
-        (when (= org.bukkit.event.block.Action/PHYSICAL (.getAction evt))
-          (when (every? (fn [[x y z]]
-                          (= Material/GOLD_BLOCK (.getType (.getBlock (.add (.getLocation block) x y z)))))
-                        [[0 3 0] [2 0 0] [-2 0 0] [0 0 2] [0 0 -2]])
-            (if (= "world" (.getName (.getWorld player)))
-              (do
-                (.teleport player city-entrance)
-                (.teleport player city-entrance))
-              (do
-                (.teleport player mozukusoba-house)
-                (.teleport player mozukusoba-house)))))
-        Material/WOOL
-        (when (= Material/AIR (.getType (.getItemInHand player)))
-          (if (= org.bukkit.event.block.Action/RIGHT_CLICK_BLOCK (.getAction evt))
-            (.setData block (mod (dec (.getData block)) 16))
-            (.setData block (mod (inc (.getData block)) 16))))
-        nil))))
+      (player-interact-block-event evt player block))
+    #_(when (= Material/WOOD_HOE (.getType (.getItemInHand player)))
+      (let [blocks (.getLastTwoTargetBlocks player (java.util.HashSet. #{(byte 0) (byte 20) (byte 102)}) 100)]
+        (doseq [[x y z] [[-1 0 0] [1 0 0] [0 -1 0] [0 1 0] [0 0 -1] [0 0 1]]
+                :let [b (.getBlock (.add (.getLocation (second blocks)) x y z))]
+                :when (= Material/AIR (.getType b))]
+          (.setType b Material/FIRE))))
+    (when (= Material/IRON_HOE (.getType (.getItemInHand player)))
+      (when (#{Action/LEFT_CLICK_AIR
+               Action/LEFT_CLICK_BLOCK}
+              (.getAction evt))
+        (let [blocks (.getLastTwoTargetBlocks player (java.util.HashSet. #{(byte 0) (byte 20) (byte 102)}) 100)]
+          #_(doseq [block blocks]
+            (.strikeLightningEffect (.getWorld block) (.getLocation block)))
+          #_(.teleport player (.getLocation (first blocks)))
+          #_(.spawn (.getWorld (first blocks)) (.getLocation (first blocks)) Zombie)
+          (when (= Material/AIR (.getType (first blocks)))
+            #_(let [b (first blocks)]
+              (.generateTree (.getWorld b) (.getLocation b) org.bukkit.TreeType/BIG_TREE))
+            (.setType (first blocks) Material/TORCH)
+            (.strikeLightningEffect (.getWorld (first blocks)) (.getLocation (first blocks)))))))
+    (when (= Material/GOLD_HOE (.getType (.getItemInHand player)))
+      (when (#{Action/RIGHT_CLICK_AIR
+               Action/RIGHT_CLICK_BLOCK}
+              (.getAction evt))
+        (when (= 0 (rand-int 5))
+          (let [hoe (.getItemInHand player)
+                dura (.getDurability hoe)]
+            (if (< 33 dura)
+              (consume-item player)
+              (.setDurability hoe (inc dura)))))
+        (dotimes [_ 3]
+          (let [p (.launchProjectile player Snowball)]
+            (.setFireTicks p 200)
+            (.setVelocity p (doto (.getVelocity p)
+                              (.add  (Vector. (- (rand) 0.5) 0.0 (- (rand) 0.5)))
+                              (.multiply 0.4)))))))
+    (when (= Material/DIAMOND_HOE (.getType (.getItemInHand player)))
+      (when (#{Action/LEFT_CLICK_AIR
+               Action/LEFT_CLICK_BLOCK}
+              (.getAction evt))
+        (let [hoe (.getItemInHand player)
+              dura (.getDurability hoe)]
+          (if (< 1562 dura)
+            (consume-item player)
+            (.setDurability hoe (+ 5 dura))))
+        (let [target-block (first (.getLastTwoTargetBlocks player (java.util.HashSet. #{(byte 0)}) 100))
+              vect (.normalize (.toVector (.subtract (.getLocation target-block)
+                                                     (.getLocation player))))
+              w (.spawnFallingBlock (.getWorld player)
+                                    (.add (.getLocation player) (.multiply vect 3))
+                                    Material/STATIONARY_WATER (byte 7))]
+          (.setVelocity w (.multiply vect 0.7)))))))
 
 (def random-block-candidates
   [Material/SANDSTONE Material/CLAY]
@@ -194,18 +402,76 @@
               (.setType block replace-to-type)
               (.setData block replace-to-data))))))))
 
+(defn player-toggle-sprint-event [evt]
+  (let [player (.getPlayer evt)]
+    (if (.isSprinting evt)
+      (.setWalkSpeed player 0.3)
+      (.setWalkSpeed player 0.2))))
+
+(defn water? [btype]
+  (#{Material/STATIONARY_WATER Material/WATER} btype))
+
+(defn water-tube [player]
+  (let [loc0 (.getLocation player)]
+    (when (and
+            (water? (.getType (.getBlock loc0)))
+            (= Material/GLASS (.getType (.getBlock (.add (.clone loc0) 0 -1 0)))))
+      (let [target-loc (loop [loc loc0 path [loc0]]
+                         (if (> 300 (count path))
+                           (let [newlocs (for [#_([x y z] [[-1 0 0] [0 -1 0] [0 0 -1] [1 0 0] [0 1 0] [0 0 1]])
+                                               [x z] [[-1 0] [0 -1] [1 0] [0 1]]
+                                               :let [y 0]
+                                               :let [l (.add (.clone loc) x y z)]
+                                               :when (and
+                                                       (water? (.getType (.getBlock l)))
+                                                       (= Material/GLASS (.getType (.getBlock (.add (.clone l) 0 -1 0)))))
+                                               :when (every? #(not= l %) path)]
+                                           l)]
+                             (if-let [newloc (first newlocs)]
+                               (recur newloc (cons newloc path))
+                               loc))
+                           loc))]
+        (when (not= target-loc loc0)
+          (.teleport player target-loc))))))
+
+(def sneak-players (atom {}))
 (defn player-toggle-sneak-event [evt]
   (when (.isSneaking evt)
-    (when-let [vehicle (.getVehicle (.getPlayer evt))]
-      (when (instance? Boat vehicle)
-        (.setVelocity vehicle (doto (.getVelocity vehicle) (.setY 0.8)))))))
+    (let [player (.getPlayer evt)]
+      (swap! sneak-players update-in [player] (fnil inc 0))
+      (future
+        (Thread/sleep 2000)
+        (swap! sneak-players update-in [player] dec))
+      (when (= 5 (@sneak-players player))
+        (.setFallDistance player 0.0)
+        (.setVelocity player (doto (.getVelocity player) (.setY 1.4))))
+      (when-let [vehicle (.getVehicle player)]
+        (when (instance? Boat vehicle)
+          (.setVelocity vehicle (doto (.getVelocity vehicle) (.setY 0.8)))))
+      (water-tube player))))
 
 (defn player-move-event [evt]
   (let [player (.getPlayer evt)]
-    (when (and
-            (.isSneaking player)
-            (= Material/LADDER (.getType (.getBlock (.getLocation player))))
-            (< (.getY (.getFrom evt)) (.getY (.getTo evt))))
+    #_(when (= (ujm) player)
+      (doseq [x (range -3 4)
+              y (range -1 0)
+              z (range -3 4)
+              :let [b (.getBlock (.add (.getLocation (ujm)) x y z))]
+              :when (#{Material/STONE Material/DIRT} (.getType b))]
+        (.setType b Material/SMOOTH_BRICK)))
+    (when (= Material/TORCH (.getType (.getItemInHand player)))
+      (doseq [x (range 0 1)
+              z (range 0 1)
+              :let [b (.getBlock (.add (.getLocation player) x 0 z))]
+              :when (and
+                      (#{Material/GRASS Material/STONE Material/SAND} (.getType (.getBlock (.add (.getLocation player) x -1 z))))
+                      (> 8 (.getLightLevel b)))]
+        (consume-item player)
+        (.setType b Material/TORCH)))
+    (if (and
+          (.isSneaking player)
+          (= Material/LADDER (.getType (.getBlock (.getLocation player))))
+          (< (.getY (.getFrom evt)) (.getY (.getTo evt))))
       (if (= 15 (.getLightFromSky (.getBlock (.getLocation player))))
         (let [n (if (= Material/LADDER (.getType (.getBlock (.add (.getLocation player) 0 1 0))))
                   (if (= Material/LADDER (.getType (.getBlock (.add (.getLocation player) 0 2 0))))
@@ -213,7 +479,31 @@
                     2)
                   1)]
           (.teleport player (doto (.getTo evt) (.add 0 n 0))))
-        (.setVelocity player (org.bukkit.util.Vector. 0 5 0))))))
+        (.setVelocity player (org.bukkit.util.Vector. 0 5 0)))
+      (let [to (.getTo evt)
+            down (.add (.clone to) 0 -1 0)]
+        (when (and
+                (not (.isFlying player))
+                (= Material/SAND (.getType (.getBlock down)))
+                (= Material/AIR (.getType (.getBlock to)))
+                (< 0.1 (let [x (Math/abs (.getX to))]
+                         (- x (int x))) 0.9)
+                (< (let [y (Math/abs (.getY to))]
+                     (- y (int y))) 0.1)
+                (< 0.1 (let [z (Math/abs (.getZ to))]
+                         (- z (int z))) 0.9))
+          (.setTo evt (.add (.clone to) 0 -1 0)))))))
+
+(defn entity-death-event [evt]
+  (let [entity (.getEntity evt)]
+    (when (instance? Zombie entity)
+      (when (instance? Player (.getKiller entity))
+        (when (= Material/TNT (.getType (.getHelmet (.getEquipment entity))))
+          (.createExplosion (.getWorld entity) (.getLocation entity) 0.1 false))
+        (when (= Material/BOW (.getType (.getItemInHand (.getEquipment entity))))
+          (.setDroppedExp evt 20))))
+    (when (instance? Giant entity)
+      (.setDroppedExp evt 100))))
 
 (defn player-login-event [evt]
   (let [player (.getPlayer evt)]
@@ -221,46 +511,159 @@
       (tweet-mc68 (format "%s logged in" (.getDisplayName player))))))
 
 (defn async-player-chat-event [evt]
-  (let [pname (.getName (.getPlayer evt))]
-    (future
-      (tweet-mc68 (format "<%s>: %s" pname (.getMessage evt))))
+  (let [pname (.getName (.getPlayer evt))
+        msg (.getMessage evt)]
+    (when (< 1 (count msg))
+      (future
+        (tweet-mc68 (format "<%s>: %s" pname msg))))
     #_(when-let [msg (second (first (re-seq #"^t:\s(.*)" (.getMessage evt))))]
       (future
         (tweet-mc68 (format "<%s>: %s" pname msg))))))
 
+(def ml-insts
+  '#{me you message accelerate into heal})
+
+(defn ml-valid? [tokens]
+  (every? (fn [t]
+            (or (ml-insts t)
+                (string? t)
+                (number? t)))
+          tokens))
+
+(defn ml-push [item stack]
+  (ref-set stack (cons item @stack)))
+
+(defn ml-pop [stack]
+  (let [[x & xs] @stack]
+    (ref-set stack xs)
+    x))
+
+(defn ml-eval [player target token stack]
+  (dosync
+    (if
+      (or (string? token) (number? token)) (ml-push token stack)
+      (condp = token
+        'you (ml-push target stack)
+        'me (ml-push player stack)
+        'message (let [x1 (ml-pop stack)
+                       x2 (ml-pop stack)]
+                   (.sendMessage x1 x2))
+        'heal (let [x1 (ml-pop stack)
+                    x2 (ml-pop stack)]
+                (.setHealth x1 (min (+ x2 (.getHealth x1)) (.getMaxHealth x1))))
+        'into (let [x1 (ml-pop stack)
+                    x2 (ml-pop stack)]
+                (ml-push (.multiply (.normalize (.toVector (.subtract (.getLocation x1) (.getLocation x2)))) 2.0)
+                         stack))
+        'accelerate (let [x1 (ml-pop stack)
+                          x2 (ml-pop stack)]
+                      (.setVelocity x1
+                                    (.add (.getVelocity x1) x2)))
+        (prn 'must-not-happen token)))))
+
+(defn player-use-book-event [player target book]
+  (let [tokens (map (fn [x] (try (read-string x) (catch Exception e nil)))
+                    (clojure.string/split (clojure.string/join "" (.getPages (.getItemMeta book))) #"\s+"))
+        stack (ref [])]
+    (when (ml-valid? tokens)
+      (doseq [token tokens]
+        (ml-eval player target token stack)))))
+
 (defn entity-damage-event [evt]
-  (condp = (.getCause evt)
-    org.bukkit.event.entity.EntityDamageEvent$DamageCause/FALL
-    (let [entity (.getEntity evt)
-          loc (.getLocation entity)
-          block (.getBlock loc)
-          block-below (.getBlock (.add (.clone loc) 0 -1 0))]
+  (let [entity (.getEntity evt)]
+    (condp = (.getCause evt)
+      org.bukkit.event.entity.EntityDamageEvent$DamageCause/FALL
       (when (instance? Player entity)
-        (cond
-          (= Material/GRASS (.getType block-below))
-          (do
-            (.setCancelled evt true)
-            (.setType block-below Material/DIRT))
-          (= Material/BED_BLOCK (.getType block))
-          (do
-            (.setCancelled evt true)
-            (when-not (.isSneaking entity)
-              (.setVelocity entity (doto (.getVelocity entity) (.setY (+ 0.9))))))
-          #_(later
-            (.setVelocity entity (let [v (.getVelocity entity)]
-                                   (.setY v (* (.getY v) -0.9))
-                                   v))))))
-    nil))
+        (let [loc (.getLocation entity)
+              block (.getBlock loc)
+              block-below (.getBlock (.add (.clone loc) 0 -1 0))]
+          (cond
+            (= Material/GRASS (.getType block-below))
+            (do
+              (.setCancelled evt true)
+              (.setType block-below Material/DIRT)
+              (.setVelocity entity (.add (.getVelocity entity) (Vector. 0.0 0.4 0.0))))
+            (= Material/BED_BLOCK (.getType block))
+            (do
+              (.setCancelled evt true)
+              (when-not (.isSneaking entity)
+                (.setVelocity entity (doto (.getVelocity entity)
+                                       (.setY 0.9))))))))
+      org.bukkit.event.entity.EntityDamageEvent$DamageCause/PROJECTILE
+      (let [attacker (.getDamager evt)]
+        (when-let [shooter (.getShooter evt)]
+          (when (and
+                  (instance? Snowball attacker)
+                  (< 0 (.getFireTicks attacker)))
+            (.setFireTicks entity 200)
+            (.damage entity 1 shooter)))
+        (when (instance? Giant entity)
+          (let [weapon (if-let [shooter (.getShooter attacker)]
+                         (.getItemInHand shooter)
+                         nil)]
+            (dotimes [i (rand-nth [0 0 0 3 5])]
+              (.setItemInHand (.getEquipment
+                                (.spawn (.getWorld entity) (.getLocation entity) Zombie))
+                              weapon)))))
+      org.bukkit.event.entity.EntityDamageEvent$DamageCause/ENTITY_ATTACK
+      (when-let [attacker (.getDamager evt)]
+        (when (and
+                (instance? Player attacker)
+                (.getItemInHand attacker)
+                (= Material/BOOK_AND_QUILL (.getType (.getItemInHand attacker))))
+          (player-use-book-event attacker entity (.getItemInHand attacker))))
+      nil)))
+
+(defn teleport-without-angle [entity location]
+  (.setYaw location (.getYaw (.getLocation entity)))
+  (.setPitch location (.getPitch (.getLocation entity)))
+  (.teleport entity location)
+  #_(when-let [vehicle (.getVehicle entity)]
+    (.teleport vehicle location)))
+
+(defn periodically1tick []
+  (doseq [arrow @special-arrows
+          :let [player (.getShooter arrow)]]
+    (if (.isDead arrow)
+      (swap! special-arrows disj arrow)
+      (let [loc (.getLocation arrow)]
+        #_(swap! arrow-locs conj (.getLocation ar))
+        (.scheduleSyncDelayedTask
+          (Bukkit/getScheduler)
+          mc68.core/plugin*
+          #_(doseq [[x y z] [[0 0 0] [0 0 1] [0 0 -1] [0 1 0] [0 -1 0] [1 0 0] [-1 0 0]]
+                   :let [b (.getBlock (.add (.clone loc) x (- y 2) z))]
+                   :when (= Material/AIR (.getType b))]
+             (.setType b Material/SMOOTH_BRICK))
+          #(teleport-without-angle player loc)
+          5)))))
+
+(defn periodically1sec []
+  (doseq [zombie (.getEntitiesByClass (Bukkit/getWorld "world") Zombie)
+          :when (= Material/BOW (.getType (.getItemInHand (.getEquipment zombie))))]
+    (when-let [target (.getTarget zombie)]
+      (when (= 0 (rand-int 3))
+        (.launchProjectile zombie Arrow)))))
 
 (defonce swank* nil)
+(defonce t* nil)
 (defn on-enable [plugin]
   (def plugin* plugin)
+  (swap! creative conj "ujm")
   (when-not swank*
-    (def swank* (swank.swank/start-repl 4006))))
+    (def swank* (swank.swank/start-repl 4006)))
+  (.scheduleSyncRepeatingTask (Bukkit/getScheduler) plugin* #'periodically1sec 0 20)
+  (def t*
+    (.scheduleSyncRepeatingTask (Bukkit/getScheduler) plugin* #'periodically1tick 0 1)))
 
-(defn spawn-safe [loc klass]
+#_(defn spawn-safe [loc klass]
   (let [e (.spawn (.getWorld loc) loc klass)
         m (ControllableMobs/assign e true)]
     #_(.clearAIBehaviors m)
     (.addAIBehavior m (AIFloat.))
     [e m]))
+
+#_(doseq [x (range -5 6) y (range -2 3) z (range -5 6)
+          :let [loc (.add (.getLocation (ujm)) x y z) block (.getBlock loc)]
+          :when (= Material/STONE (.getType block))]
+  (.setType block Material/GLASS))

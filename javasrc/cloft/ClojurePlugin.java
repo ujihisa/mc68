@@ -114,6 +114,11 @@ public class ClojurePlugin extends JavaPlugin implements Listener {
         if (f.isBound()) f.invoke(event);
     }
     @EventHandler
+    public void onPlayerToggleSprint(PlayerToggleSprintEvent event) {
+        clojure.lang.Var f = clojure.lang.RT.var(ns, "player-toggle-sprint-event");
+        if (f.isBound()) f.invoke(event);
+    }
+    @EventHandler
     public void onPlayerToggleSneak(PlayerToggleSneakEvent event) {
         clojure.lang.Var f = clojure.lang.RT.var(ns, "player-toggle-sneak-event");
         if (f.isBound()) f.invoke(event);
@@ -211,7 +216,7 @@ public class ClojurePlugin extends JavaPlugin implements Listener {
     /*
     @EventHandler
     public void onBlockPhysics(BlockPhysicsEvent event) {
-        clojure.lang.Var f = clojure.lang.RT.var(ns, "block-place-event");
+        clojure.lang.Var f = clojure.lang.RT.var(ns, "block-physics-event");
         if (f.isBound()) f.invoke(event);
     }
     */
