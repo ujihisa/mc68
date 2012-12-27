@@ -521,7 +521,7 @@
         (tweet-mc68 (format "<%s>: %s" pname msg))))))
 
 (def ml-insts
-  '#{me you message accelerate into heal})
+  '#{me you message accelerate into heal up down hp})
 
 (defn ml-valid? [tokens]
   (every? (fn [t]
@@ -547,18 +547,39 @@
         'me (ml-push player stack)
         'message (let [x1 (ml-pop stack)
                        x2 (ml-pop stack)]
-                   (.sendMessage x1 x2))
+                   (.sendMessage x1 (str x2)))
         'heal (let [x1 (ml-pop stack)
                     x2 (ml-pop stack)]
                 (.setHealth x1 (min (+ x2 (.getHealth x1)) (.getMaxHealth x1))))
         'into (let [x1 (ml-pop stack)
-                    x2 (ml-pop stack)]
-                (ml-push (.multiply (.normalize (.toVector (.subtract (.getLocation x1) (.getLocation x2)))) 2.0)
+                    x2 (ml-pop stack)
+                    loc1 (if (instance? Location x1)
+                           x1
+                           (.getLocation x1))
+                    loc2 (if (instance? Location x2)
+                           x2
+                           (.getLocation x2))]
+                (ml-push (.toVector (.subtract (.clone loc1) loc2))
                          stack))
         'accelerate (let [x1 (ml-pop stack)
                           x2 (ml-pop stack)]
                       (.setVelocity x1
-                                    (.add (.getVelocity x1) x2)))
+                                    (let [v (.getVelocity x1)]
+                                      (.add v x2)
+                                      (.setX v (* 0.3 (.getX v)))
+                                      (.setZ v (* 0.3 (.getZ v)))
+                                      (.setY v (min 0.75 (.getY v))))))
+        'up (let [x (ml-pop stack)
+                  loc (if (instance? Location x)
+                        x
+                        (.getLocation x))]
+              (ml-push (.add (.clone loc) 0 1 0) stack))
+        'down (let [x (ml-pop stack)
+                  loc (if (instance? Location x)
+                        x
+                        (.getLocation x))]
+              (ml-push (.add (.clone loc) 0 -1 0) stack))
+        'up (ml-push (.getHealth (ml-pop stack)) stack)
         (prn 'must-not-happen token)))))
 
 (defn player-use-book-event [player target book]
@@ -566,8 +587,11 @@
                     (clojure.string/split (clojure.string/join "" (.getPages (.getItemMeta book))) #"\s+"))
         stack (ref [])]
     (when (ml-valid? tokens)
-      (doseq [token tokens]
-        (ml-eval player target token stack)))))
+      (later
+        (try
+          (doseq [token tokens]
+            (ml-eval player target token stack))
+          (catch Exception e (prn e)))))))
 
 (defn entity-damage-event [evt]
   (let [entity (.getEntity evt)]
