@@ -2,7 +2,7 @@
   (:require [twitter.oauth]
             [twitter.api.restful]
             [swank.swank])
-  (:import [org.bukkit Bukkit DyeColor Material]
+  (:import [org.bukkit Bukkit DyeColor Material Color]
            [org.bukkit.material Wool Dye]
            [org.bukkit.entity Animals Arrow Blaze Boat CaveSpider Chicken
             ComplexEntityPart ComplexLivingEntity Cow Creature Creeper Egg
@@ -165,9 +165,10 @@
         nil)
       nil)))
 
+(def mp-max 100)
 (defn player-bed-enter-event [evt]
   (let [player (.getPlayer evt)]
-    (swap! magic-point assoc (.getDisplayName player) 20)))
+    (swap! magic-point assoc (.getDisplayName player) mp-max)))
 
 (defn entity-shoot-bow-event [evt]
   #_(prn 'ok evt))
@@ -473,6 +474,12 @@
           (.setVelocity vehicle (doto (.getVelocity vehicle) (.setY 0.8)))))
       (water-tube player))))
 
+(def colors-i (atom 0))
+(def colors
+  [Color/AQUA Color/BLACK Color/BLUE Color/FUCHSIA Color/GRAY Color/GREEN
+   Color/LIME Color/MAROON Color/NAVY Color/OLIVE Color/ORANGE Color/PURPLE
+   Color/RED Color/SILVER Color/TEAL Color/WHITE Color/YELLOW])
+
 (defn player-move-event [evt]
   (let [player (.getPlayer evt)]
     #_(when (= (ujm) player)
@@ -487,6 +494,7 @@
               z (range 0 1)
               :let [b (.getBlock (.add (.getLocation player) x 0 z))]
               :when (and
+                      (= Material/AIR (.getType (.getBlock (.getLocation player))))
                       (#{Material/GRASS Material/STONE Material/SAND} (.getType (.getBlock (.add (.getLocation player) x -1 z))))
                       (> 8 (.getLightLevel b)))]
         (consume-item player)
@@ -532,7 +540,7 @@
   (let [player (.getPlayer evt)]
     (future
       (let [pname (.getDisplayName player)]
-        (swap! magic-point assoc pname (get @magic-point pname 20))
+        (swap! magic-point assoc pname (get @magic-point pname mp-max))
         (tweet-mc68 (format "%s logged in" pname))))))
 
 (defn async-player-chat-event [evt]
@@ -583,7 +591,9 @@
                    (.sendMessage x1 (str x2)))
         'heal (let [x1 (ml-pop stack)
                     x2 (ml-pop stack)]
-                (.setHealth x1 (min (+ x2 (.getHealth x1)) (.getMaxHealth x1))))
+                (ml-using-mp player x2
+                             (fn []
+                               (.setHealth x1 (min (+ x2 (.getHealth x1)) (.getMaxHealth x1))))))
         'into (let [x1 (ml-pop stack)
                     x2 (ml-pop stack)
                     loc1 (if (instance? Location x1)
@@ -652,7 +662,7 @@
                                        (.setY 0.9))))))))
       org.bukkit.event.entity.EntityDamageEvent$DamageCause/PROJECTILE
       (let [attacker (.getDamager evt)]
-        (when-let [shooter (.getShooter evt)]
+        (when-let [shooter (.getShooter attacker)]
           (when (and
                   (instance? Snowball attacker)
                   (< 0 (.getFireTicks attacker)))
@@ -700,6 +710,15 @@
           5)))))
 
 (defn periodically1sec []
+  (when-let [player (ujm)]
+    (when-let [armor (.getChestplate (.getInventory player))]
+      (when (= Material/LEATHER_CHESTPLATE (.getType armor))
+        (.setItemMeta
+          armor
+          (doto (.getItemMeta armor)
+            (.setColor (get colors
+                            (swap! colors-i #(rem (inc %) (count colors)))))))
+        (.setChestplate (.getInventory player) armor))))
   (doseq [zombie (.getEntitiesByClass (Bukkit/getWorld "world") Zombie)
           :when (= Material/BOW (.getType (.getItemInHand (.getEquipment zombie))))]
     (when-let [target (.getTarget zombie)]
