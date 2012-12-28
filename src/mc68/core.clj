@@ -480,15 +480,51 @@
    Color/LIME Color/MAROON Color/NAVY Color/OLIVE Color/ORANGE Color/PURPLE
    Color/RED Color/SILVER Color/TEAL Color/WHITE Color/YELLOW])
 
+(defn ujm-walk []
+  #_(doseq [[x y z] [[-1 0 0] [1 0 0] [0 -1 0] [0 1 0] [0 0 -1] [0 0 1]]
+          :let [b (.getBlock (.add (.getLocation (ujm)) x y z))]]
+    (when (#{Material/STONE Material/COAL_ORE Material/IRON_ORE} (.getType b))
+      (future
+        (Thread/sleep 100)
+        (later (.setType b Material/AIR)))))
+  #_(when (.isSprinting (ujm))
+    (doseq [[x z] [[-1 0] [1 0] [0 -1] [0 1]]
+            :let [b (.getBlock (.add (.getLocation (ujm)) x -1 z))]
+            :when (= Material/SMOOTH_BRICK (.getType b))]
+      (future
+        (Thread/sleep 1000)
+        (later (.setType b Material/WATER)))))
+  #_(let [b (.getBlock (.getLocation (ujm)))]
+    (when (= Material/AIR (.getType b))
+      (.setType b Material/VINE)))
+  #_(when (.isSprinting (ujm))
+    (let [b (.getBlock (.getLocation (ujm)))]
+      (future
+        (Thread/sleep 2000)
+        (later (.setType b Material/FENCE)))))
+  #_(doseq [x (range -2 3)
+          y (range -2 0)
+          z (range -2 3)
+          :let [b (.getBlock (.add (.getLocation (ujm)) x y z))]
+          :when (.isLiquid b)]
+    (.setType b (.getType (.getItemInHand (ujm))))
+    (.setData b (.getData (.getData (.getItemInHand (ujm)))))))
+
 (defn player-move-event [evt]
   (let [player (.getPlayer evt)]
-    #_(when (= (ujm) player)
-      (doseq [x (range -3 4)
-              y (range -1 0)
-              z (range -3 4)
-              :let [b (.getBlock (.add (.getLocation (ujm)) x y z))]
-              :when (#{Material/STONE Material/DIRT} (.getType b))]
-        (.setType b Material/SMOOTH_BRICK)))
+    (when (= (ujm) player)
+      (ujm-walk))
+    #_(when (= (mozukusoba) (.getPlayer evt))
+      (when (.isSprinting (mozukusoba))
+        (doseq [#_([x y z] [[-1 0 0] [1 0 0] [0 -1 0] [0 1 0] [0 0 -1] [0 0 1]])
+                x (range -2 3)
+                y (range 0 4)
+                z (range -2 3)
+                :let [b (.getBlock (.add (.getLocation (mozukusoba)) x y z))]]
+          (when (#{Material/DIRT Material/STONE Material/COAL_ORE Material/IRON_ORE} (.getType b))
+            (.setType b Material/AIR)#_(future
+              (Thread/sleep 200)
+              (later (.setType b Material/AIR)))))))
     (when (= Material/TORCH (.getType (.getItemInHand player)))
       (doseq [x (range 0 1)
               z (range 0 1)
@@ -715,7 +751,8 @@
             (.damage entity 1 shooter)))
         (when (instance? Giant entity)
           (let [weapon (if-let [shooter (.getShooter attacker)]
-                         (.getItemInHand shooter)
+                         (when (instance? Player shooter)
+                           (.getItemInHand shooter))
                          nil)]
             (dotimes [i (rand-nth [0 0 0 3 5])]
               (.setItemInHand (.getEquipment
@@ -753,6 +790,14 @@
              (.setType b Material/SMOOTH_BRICK))
           #(teleport-without-angle player loc)
           5)))))
+
+(defn leather-colored [material color]
+  "material is like Material/LEATHER_CHESTPLATE,
+   color is like Color/WHITE"
+  (let [is (ItemStack. material 1)]
+    (.setItemMeta is (doto (.getItemMeta is)
+                       (.setColor color)))
+    is))
 
 (defn periodically1sec []
   (when-let [player (ujm)]
