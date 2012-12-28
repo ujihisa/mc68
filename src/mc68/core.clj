@@ -554,7 +554,7 @@
         (tweet-mc68 (format "<%s>: %s" pname msg))))))
 
 (def ml-insts
-  '#{me you message accelerate into heal up down hp})
+  '#{me you message accelerate into heal up down right left hp delay})
 
 (defn ml-valid? [tokens]
   (every? (fn [t]
@@ -573,60 +573,106 @@
 
 (defn ml-using-mp [player mp f]
   (let [new-mp (- (@magic-point (.getDisplayName player)) mp)]
-    (if (< 0 new-mp)
+    (if (or
+          (@creative (.getDisplayName player))
+          (< 0 new-mp))
       (do
         (swap! magic-point assoc (.getDisplayName player) new-mp)
         (f))
       (.sendMessage player "No MP left!"))))
 
-(defn ml-eval [player target token stack]
-  (dosync
-    (if
-      (or (string? token) (number? token)) (ml-push token stack)
-      (condp = token
-        'you (ml-push target stack)
-        'me (ml-push player stack)
-        'message (let [x1 (ml-pop stack)
-                       x2 (ml-pop stack)]
-                   (.sendMessage x1 (str x2)))
-        'heal (let [x1 (ml-pop stack)
-                    x2 (ml-pop stack)]
-                (ml-using-mp player x2
-                             (fn []
-                               (.setHealth x1 (min (+ x2 (.getHealth x1)) (.getMaxHealth x1))))))
-        'into (let [x1 (ml-pop stack)
-                    x2 (ml-pop stack)
-                    loc1 (if (instance? Location x1)
-                           x1
-                           (.getLocation x1))
-                    loc2 (if (instance? Location x2)
-                           x2
-                           (.getLocation x2))]
-                (ml-push (.toVector (.subtract (.clone loc1) loc2))
-                         stack))
-        'accelerate (ml-using-mp
-                      player 2
-                      (fn []
-                        (let [x1 (ml-pop stack)
-                              x2 (ml-pop stack)]
-                          (.setVelocity x1
-                                        (let [v (.getVelocity x1)]
-                                          (.add v x2)
-                                          (.setX v (* 0.3 (.getX v)))
-                                          (.setZ v (* 0.3 (.getZ v)))
-                                          (.setY v (min 0.75 (.getY v))))))))
-        'up (let [x (ml-pop stack)
-                  loc (if (instance? Location x)
-                        x
-                        (.getLocation x))]
-              (ml-push (.add (.clone loc) 0 1 0) stack))
-        'down (let [x (ml-pop stack)
-                    loc (if (instance? Location x)
-                          x
-                          (.getLocation x))]
-                (ml-push (.add (.clone loc) 0 -1 0) stack))
-        'hp (ml-push (.getHealth (ml-pop stack)) stack)
-        (prn 'must-not-happen token)))))
+(defn ml-eval [player target stack tokens]
+  (let [[token & tokens] tokens]
+    (when token
+      (if (or (string? token) (number? token))
+        (dosync
+          (ml-push token stack)
+          (ml-eval player target stack tokens))
+        (condp = token
+          'you (dosync
+                 (ml-push target stack)
+                 (ml-eval player target stack tokens))
+          'me (dosync
+                (ml-push player stack)
+                (ml-eval player target stack tokens))
+          'message (dosync
+                     (let [x1 (ml-pop stack)
+                           x2 (ml-pop stack)]
+                       (.sendMessage x1 (str x2))
+                       (ml-eval player target stack tokens)))
+          'heal (dosync
+                  (let [x1 (ml-pop stack)
+                        x2 (ml-pop stack)]
+                    (ml-using-mp player x2
+                                 (fn []
+                                   (.setHealth x1 (min (+ x2 (.getHealth x1)) (.getMaxHealth x1)))
+                                   (ml-eval player target stack tokens)))))
+          'into (dosync
+                  (let [x1 (ml-pop stack)
+                        x2 (ml-pop stack)
+                        loc1 (if (instance? Location x1)
+                               x1
+                               (.getLocation x1))
+                        loc2 (if (instance? Location x2)
+                               x2
+                               (.getLocation x2))]
+                    (ml-push (.toVector (.subtract (.clone loc1) loc2))
+                             stack)
+                    (ml-eval player target stack tokens)))
+          'accelerate (ml-using-mp
+                        player 2
+                        (fn []
+                          (dosync
+                            (let [x1 (ml-pop stack)
+                                  x2 (ml-pop stack)]
+                              (.setVelocity x1
+                                            (let [v (.getVelocity x1)]
+                                              (.add v x2)
+                                              (.setX v (* 0.3 (.getX v)))
+                                              (.setZ v (* 0.3 (.getZ v)))
+                                              (.setY v (min 0.75 (.getY v))))))
+                            (ml-eval player target stack tokens))))
+          'up (dosync
+                (let [x (ml-pop stack)
+                      loc (if (instance? Location x)
+                            x
+                            (.getLocation x))]
+                  (ml-push (.add (.clone loc) 0 1 0) stack)
+                  (ml-eval player target stack tokens)))
+          'down (dosync
+                  (let [x (ml-pop stack)
+                        loc (if (instance? Location x)
+                              x
+                              (.getLocation x))]
+                    (ml-push (.add (.clone loc) 0 -1 0) stack)
+                    (ml-eval player target stack tokens)))
+          'right (dosync
+                   (let [x (ml-pop stack)
+                         loc (.getLocation x)
+                         vect (.toVector (.subtract (.clone loc) (.getLocation player)))
+                         v-x (.getX vect)
+                         v-z (.getZ vect)
+                         vect2 (.normalize (Vector. (- v-z) (.getY vect) v-x))]
+                     (ml-push (.add (.clone loc) vect2) stack)
+                     (ml-eval player target stack tokens)))
+          'left (dosync
+                  (let [x (ml-pop stack)
+                        loc (.getLocation x)
+                        vect (.toVector (.subtract (.clone loc) (.getLocation player)))
+                        v-x (.getX vect)
+                        v-z (.getZ vect)
+                        vect2 (.normalize (Vector. v-z (.getY vect) (- v-x)))]
+                    (ml-push (.add (.clone loc) vect2) stack)
+                    (ml-eval player target stack tokens)))
+          'delay (future
+                   (try
+                     (Thread/sleep (min 10000 (* 100 (dosync (ml-pop stack)))))
+                     (later (ml-eval player target stack tokens))
+                     (catch Exception e (prn 'in-delay e))))
+          'hp (dosync
+                (ml-push (.getHealth (ml-pop stack)) stack)
+                (ml-eval player target stack tokens))
+          (prn 'must-not-happen token tokens))))))
 
 (defn player-use-book-event [player target book]
   (let [tokens (map (fn [x] (try (read-string x) (catch Exception e nil)))
@@ -635,9 +681,8 @@
     (when (ml-valid? tokens)
       (later
         (try
-          (doseq [token tokens]
-            (ml-eval player target token stack)
-            (show-current-mp player))
+          (ml-eval player target stack tokens)
+          (show-current-mp player)
           (catch Exception e (prn e)))))))
 
 (defn entity-damage-event [evt]
