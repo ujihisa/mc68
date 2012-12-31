@@ -331,6 +331,33 @@
             (when (= Material/MOB_SPAWNER (.getType block-to-copy))
               (.setSpawnedType (.getState b) (.getSpawnedType (.getState block-to-copy)))))))))))
 
+(defn player-use-diamond-hoe [player action]
+  #_(when (= (ujm) player)
+    (doseq [x (range -2 3)
+            y (range 10 70)
+            z (range -2 3)
+            :let [loc (doto (.add (.getLocation (first (.getLastTwoTargetBlocks player (java.util.HashSet. #{(byte 0)}) 100))) x 0 z)
+                        (.setY y))]
+            #_(:when (< 30 (.getY loc)))
+            :let [b (.getBlock loc)]
+            #_(:when (#{Material/AIR} (.getType b)))]
+      (.setType b Material/AIR)))
+  #_(when (#{Action/LEFT_CLICK_AIR
+           Action/LEFT_CLICK_BLOCK}
+          action)
+    (let [hoe (.getItemInHand player)
+          dura (.getDurability hoe)]
+      (if (< 1562 dura)
+        (consume-item player)
+        (.setDurability hoe (+ 5 dura))))
+    (let [target-block (first (.getLastTwoTargetBlocks player (java.util.HashSet. #{(byte 0)}) 100))
+          vect (.normalize (.toVector (.subtract (.getLocation target-block)
+                                                 (.getLocation player))))
+          w (.spawnFallingBlock (.getWorld player)
+                                (.add (.getLocation player) (.multiply vect 3))
+                                Material/STATIONARY_WATER (byte 7))]
+      (.setVelocity w (.multiply vect 0.7)))))
+
 (defn player-interact-event [evt]
   (let [player (.getPlayer evt)]
     (when (#{Action/RIGHT_CLICK_AIR Action/RIGHT_CLICK_BLOCK} (.getAction evt))
@@ -374,21 +401,7 @@
                               (.add  (Vector. (- (rand) 0.5) 0.0 (- (rand) 0.5)))
                               (.multiply 0.4)))))))
     (when (= Material/DIAMOND_HOE (.getType (.getItemInHand player)))
-      (when (#{Action/LEFT_CLICK_AIR
-               Action/LEFT_CLICK_BLOCK}
-              (.getAction evt))
-        (let [hoe (.getItemInHand player)
-              dura (.getDurability hoe)]
-          (if (< 1562 dura)
-            (consume-item player)
-            (.setDurability hoe (+ 5 dura))))
-        (let [target-block (first (.getLastTwoTargetBlocks player (java.util.HashSet. #{(byte 0)}) 100))
-              vect (.normalize (.toVector (.subtract (.getLocation target-block)
-                                                     (.getLocation player))))
-              w (.spawnFallingBlock (.getWorld player)
-                                    (.add (.getLocation player) (.multiply vect 3))
-                                    Material/STATIONARY_WATER (byte 7))]
-          (.setVelocity w (.multiply vect 0.7)))))))
+      (player-use-diamond-hoe player (.getAction evt)))))
 
 (def random-block-candidates
   [Material/SANDSTONE Material/CLAY]
@@ -517,13 +530,18 @@
       (future
         (Thread/sleep 2000)
         (later (.setType b Material/FENCE)))))
+  #_(when (.isSprinting (ujm))
+    (let [loc1 (.add (.getLocation (ujm)) 0 -1 0)
+          loc2 (.add (.getLocation (ujm)) 0 -2 0)]
+      (.setType (.getBlock loc1) Material/WATER)
+      (.setType (.getBlock loc2) Material/GLASS)))
   #_(doseq [x (range -2 3)
-          y (range -2 0)
+          y (range 0 6)
           z (range -2 3)
           :let [b (.getBlock (.add (.getLocation (ujm)) x y z))]
-          :when (.isLiquid b)]
-    (.setType b (.getType (.getItemInHand (ujm))))
-    (.setData b (.getData (.getData (.getItemInHand (ujm)))))))
+          #_(:when (.isLiquid b))]
+    (.setType b Material/AIR #_(.getType (.getItemInHand (ujm))))
+    #_(.setData b (.getData (.getData (.getItemInHand (ujm)))))))
 
 (defn player-move-event [evt]
   (let [player (.getPlayer evt)]
