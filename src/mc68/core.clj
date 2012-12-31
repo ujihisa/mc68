@@ -756,7 +756,7 @@
   (let [entity (.getEntity evt)]
     (condp = (.getCause evt)
       org.bukkit.event.entity.EntityDamageEvent$DamageCause/FALL
-      (when (instance? Player entity)
+      (when (instance? LivingEntity entity)
         (let [loc (.getLocation entity)
               block (.getBlock loc)
               block-below (.getBlock (.add (.clone loc) 0 -1 0))]
