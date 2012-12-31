@@ -5,7 +5,7 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.4.0"]
                  [twitter-api "0.6.13"]
-                 [swank-clojure/swank-clojure "1.4.2"]
+                 [swank-clojure/swank-clojure "1.5.0-SNAPSHOT"]
                  [org.bukkit/bukkit "1.4.6-R0.3-SNAPSHOT"]]
   :dev-dependencies [[org.bukkit/bukkit "1.4.6-R0.3-SNAPSHOT"]]
   :repositories {"org.bukkit"
