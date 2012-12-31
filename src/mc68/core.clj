@@ -25,14 +25,14 @@
            [org.bukkit.event.block Action]
            [org.bukkit.enchantments Enchantment])
   (:import #_(twitter.callbacks.protocols SyncSingleCallback)
-           #_([de.ntcomputer.minecraft.controllablemobs.api ControllableMobs]
+           [de.ntcomputer.minecraft.controllablemobs.api ControllableMobs]
            [de.ntcomputer.minecraft.controllablemobs.api.actions ActionState
             ActionType]
            [de.ntcomputer.minecraft.controllablemobs.api.aibehaviors
             EntityFilter AIAttackMelee AIAttackRanged AIBehavior AIFleeSun
             AIFloat AILookAtEntity AIRandomLookaround AIRandomStroll
             AIRestrictSun AITargetBehavior AITargetBehaviorEx AITargetHurtBy
-            AITargetNearest])))
+            AITargetNearest]))
 
 (defonce plugin* nil)
 (def creative (atom #{}))
@@ -227,6 +227,11 @@
     (condp instance? entity
       Zombie
       (when (= org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason/NATURAL (.getSpawnReason evt))
+        (when (= 0 (rand-int 3))
+          (let [[new-cp new-hp] (rand-nth [[Material/IRON_CHESTPLATE 50] [Material/DIAMOND_CHESTPLATE 500]])]
+            (.setChestplate (.getEquipment entity) (ItemStack. new-cp 1))
+            (.setMaxHealth entity new-hp)
+            (.setHealth entity new-hp)))
         (when (= 0 (rand-int 10))
           (.spawn (.getWorld entity) (.getLocation entity) Zombie))
         (let [eq (.getEquipment entity)]
@@ -266,6 +271,14 @@
             (= Material/STATIONARY_WATER (.getChangedType evt))
             (= (byte 7) (.getData block)))
       (prn 'ok)))))
+
+(defn player-drink-milk [player]
+  (let [is (.getItemInHand player)]
+    (when (= Material/MILK_BUCKET (.getType is))
+      (let [new-mp (min mp-max (+ 50 (@magic-point (.getDisplayName player))))]
+        (swap! magic-point assoc (.getDisplayName player) new-mp)
+        (show-current-mp player)
+        (.setItemInHand player (ItemStack. Material/BUCKET 1))))))
 
 (defn player-interact-block-event [evt player block]
   (condp = (.getType block)
@@ -320,6 +333,8 @@
 
 (defn player-interact-event [evt]
   (let [player (.getPlayer evt)]
+    (when (#{Action/RIGHT_CLICK_AIR Action/RIGHT_CLICK_BLOCK} (.getAction evt))
+      (player-drink-milk player))
     (when-let [block (.getClickedBlock evt)]
       (player-interact-block-event evt player block))
     #_(when (= Material/WOOD_HOE (.getType (.getItemInHand player)))
@@ -568,7 +583,8 @@
         (when (= Material/TNT (.getType (.getHelmet (.getEquipment entity))))
           (.createExplosion (.getWorld entity) (.getLocation entity) 0.1 false))
         (when (= Material/BOW (.getType (.getItemInHand (.getEquipment entity))))
-          (.setDroppedExp evt 20))))
+          (.setDroppedExp evt 20)))
+      (.setDroppedExp evt (int (/ (.getMaxHealth entity) 2))))
     (when (instance? Giant entity)
       (.setDroppedExp evt 100))))
 
@@ -590,7 +606,7 @@
         (tweet-mc68 (format "<%s>: %s" pname msg))))))
 
 (def ml-insts
-  '#{me you message accelerate into heal up down right left hp delay})
+  '#{me you message accelerate into heal up down right left hp delay teleport})
 
 (defn ml-valid? [tokens]
   (every? (fn [t]
@@ -639,10 +655,12 @@
           'heal (dosync
                   (let [x1 (ml-pop stack)
                         x2 (ml-pop stack)]
-                    (ml-using-mp player x2
-                                 (fn []
-                                   (.setHealth x1 (min (+ x2 (.getHealth x1)) (.getMaxHealth x1)))
-                                   (ml-eval player target stack tokens)))))
+                    (if (< x2 0)
+                      (.sendMessage player "heal has to use a positive number!")
+                      (ml-using-mp player x2
+                                   (fn []
+                                     (.setHealth x1 (min (+ x2 (.getHealth x1)) (.getMaxHealth x1)))
+                                     (ml-eval player target stack tokens))))))
           'into (dosync
                   (let [x1 (ml-pop stack)
                         x2 (ml-pop stack)
@@ -668,6 +686,18 @@
                                               (.setZ v (* 0.3 (.getZ v)))
                                               (.setY v (min 0.75 (.getY v))))))
                             (ml-eval player target stack tokens))))
+          'teleport (ml-using-mp
+                      player 3
+                      (fn []
+                        (dosync
+                          (let [x1 (ml-pop stack)
+                                x2 (ml-pop stack)
+                                loc (if (instance? Location x2)
+                                      x2
+                                      (.getLocation x2))]
+                            (if (.isSolid (.getType (.getBlock loc)))
+                              (.sendMessage player "The destination block is solid.")
+                              (.teleport x1 loc))))))
           'up (dosync
                 (let [x (ml-pop stack)
                       loc (if (instance? Location x)
@@ -712,14 +742,15 @@
 
 (defn player-use-book-event [player target book]
   (let [tokens (map (fn [x] (try (read-string x) (catch Exception e nil)))
-                    (clojure.string/split (clojure.string/join "" (.getPages (.getItemMeta book))) #"\s+"))
+                    (clojure.string/split (clojure.string/join " " (.getPages (.getItemMeta book))) #"\s+"))
         stack (ref [])]
-    (when (ml-valid? tokens)
+    (if (ml-valid? tokens)
       (later
         (try
           (ml-eval player target stack tokens)
           (show-current-mp player)
-          (catch Exception e (prn e)))))))
+          (catch Exception e (prn e))))
+      (prn 'invalid-tokens tokens))))
 
 (defn entity-damage-event [evt]
   (let [entity (.getEntity evt)]
@@ -766,6 +797,16 @@
                 (= Material/BOOK_AND_QUILL (.getType (.getItemInHand attacker))))
           (player-use-book-event attacker entity (.getItemInHand attacker))))
       nil)))
+
+(defn tmp-fence2wall []
+  (later (doseq [x (range -10 11)
+                 z (range -10 11)
+                 :let [loc (.add (.getLocation (ujm)) x 0 z)]
+                 :when (= Material/FENCE (.getType (.getBlock loc)))
+                 :let [t (rand-nth [Material/WOOL Material/LOG])]
+                 y (range 0 7)
+                 :let [b (.getBlock (.add (.clone loc) 0 y 0))]]
+           (.setType b t))))
 
 (defn teleport-without-angle [entity location]
   (.setYaw location (.getYaw (.getLocation entity)))
@@ -826,14 +867,48 @@
   (def t*
     (.scheduleSyncRepeatingTask (Bukkit/getScheduler) plugin* #'periodically1tick 0 1)))
 
-#_(defn spawn-safe [loc klass]
+(defn spawn-safe [loc klass]
   (let [e (.spawn (.getWorld loc) loc klass)
         m (ControllableMobs/assign e true)]
     #_(.clearAIBehaviors m)
-    (.addAIBehavior m (AIFloat.))
+    #_(.addAIBehavior m (AIFloat.))
     [e m]))
 
 #_(doseq [x (range -5 6) y (range -2 3) z (range -5 6)
           :let [loc (.add (.getLocation (ujm)) x y z) block (.getBlock loc)]
           :when (= Material/STONE (.getType block))]
   (.setType block Material/GLASS))
+
+
+; memo
+; 
+; Bat
+; Blaze
+; CaveSpider
+; Spider
+; Chicken
+; Creeper
+; Enderman
+; Ghast
+; Giant
+; IronGolem
+; MagmaCube
+; MushroomCow
+; Cow
+; Ocelot
+; Pig
+; PigZombie
+; Zombie
+; Player
+; Sheep
+; Silverfish
+; Skeleton
+; Slime
+; Snowman
+; Squid
+; Villager
+; Wolf
+; 
+; EnderDragon
+; Witch
+; Wither
