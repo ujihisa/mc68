@@ -906,9 +906,22 @@
   (let [entity (.getEntity evt)
         loc (.getLocation entity)]
     (if (and (instance? LivingEntity entity)
-             (= Material/GOLD_BLOCK
-                (.getType (.getBlock (.add (.clone loc) 0.0 -0.5 0.0)))))
-      (.setCancelled evt true)
+             (= m/gold-block
+                (.getType (.getBlock (.add (.clone loc) 0.0 -1.0 0.0)))))
+      (do
+        (.setDamage evt 0)
+        (let [loc (.getLocation entity)]
+          (later
+            (.teleport entity loc)
+            (.setVelocity entity (Vector. 0 0 0)))
+          (when-let [attacker (try (.getDamager evt) (catch Exception e nil))]
+            (when (instance? LivingEntity attacker)
+              (loc/play-sound (.getLocation attacker) s/door-close 1.0 2.0)
+              (let [velo (.normalize (.toVector
+                                       (.subtract (.getLocation attacker)
+                                                  (.clone loc)))) ]
+                (.setY velo 0.2)
+                (later (.setVelocity attacker velo)))))))
       (condp = (.getCause evt)
         EntityDamageEvent$DamageCause/FALL
         (when (instance? LivingEntity entity)
