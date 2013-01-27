@@ -196,6 +196,11 @@
   (when (nil? (.getTarget target))
     (.setPassenger target player)))
 
+(defn player-give-slimeball-to-slime [player target]
+  (when (= m/slime-ball (.getType (.getItemInHand player)))
+    (consume-item player)
+    (.setSize target (min 10 (inc (.getSize target))))))
+
 (defn player-interact-entity-event [evt]
   (let [target (.getRightClicked evt)
         player (.getPlayer evt)]
@@ -212,6 +217,8 @@
           (.remove target)))
       Spider
       (player-ride-spider player target)
+      Slime
+      (player-give-slimeball-to-slime player target)
       nil)))
 
 (def mozukusoba-house
@@ -930,6 +937,11 @@
                     (< 0 (.getFireTicks attacker)))
               (.setFireTicks entity 200)
               (.damage entity 1 shooter)))
+          (when (and
+                  (instance? Slime entity)
+                  (instance? Arrow attacker))
+            (.remove attacker)
+            (.setCancelled evt true))
           (when (instance? Giant entity)
             (let [weapon (if-let [shooter (.getShooter attacker)]
                            (when (instance? Player shooter)
@@ -1022,7 +1034,20 @@
                                  (.subtract (.add (.getLocation target) 0 2 0) (.getLocation spider)))
                                0.2))
       (.playEffect (.getWorld spider) (.getLocation spider) Effect/ENDER_SIGNAL nil)
-      (.playSound (.getWorld spider) (.getLocation spider) s/spider-idle 1.0 0.0))))
+      (.playSound (.getWorld spider) (.getLocation spider) s/spider-idle 1.0 0.0)))
+  (when (= 0 (rand-int 3))
+    (doseq [player (Bukkit/getOnlinePlayers)
+            slime (filter #(instance? Slime %)
+                           (.getNearbyEntities player 10 5 10))
+            :when (= 0 (rand-int 2))
+            :when (< 1 (.getSize slime))
+            :let [vect (.normalize (.toVector
+                                     (.subtract (.getLocation player)
+                                                (.getLocation slime))))]
+            :let [arrow (.launchProjectile slime Arrow)]]
+      (.setVelocity arrow vect)
+      (when (< 2 (.getSize slime))
+        (later (.setFireTicks arrow 20))))))
 
 (defonce swank* nil)
 (defonce t* nil)
