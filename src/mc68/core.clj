@@ -879,12 +879,6 @@
         (.damage new-entity 1 attacker))
       (.remove entity))))
 
-(defn entity-damage-by-block-event [evt]
-  (entity-damage-event evt))
-
-(defn entity-damage-by-entity-event [evt]
-  (entity-damage-event evt))
-
 (defn -entity-damage-event [evt]
   (let [entity (.getEntity evt)]
     (if (and (instance? LivingEntity entity)
@@ -943,6 +937,12 @@
                    (.setCancelled evt true))
           nil)
         nil))))
+
+(defn entity-damage-by-block-event [evt]
+  (entity-damage-event evt))
+
+(defn entity-damage-by-entity-event [evt]
+  (entity-damage-event evt))
 
 (defn tmp-fence2wall []
   (later (doseq [x (range -10 11)
