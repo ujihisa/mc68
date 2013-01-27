@@ -879,7 +879,7 @@
         (.damage new-entity 1 attacker))
       (.remove entity))))
 
-(defn- entity-damage-event [evt]
+(defn entity-damage-event [evt]
   (let [entity (.getEntity evt)]
     (if (and (instance? LivingEntity entity)
              (= Material/GOLD_BLOCK (.getType (.getBlock (.add (.getLocation entity) 0 -1 0)))))
@@ -939,10 +939,10 @@
         nil))))
 
 (defn entity-damage-by-block-event [evt]
-  (entity-damage-event evt))
+  nil)
 
 (defn entity-damage-by-entity-event [evt]
-  (entity-damage-event evt))
+  nil)
 
 (defn tmp-fence2wall []
   (later (doseq [x (range -10 11)
