@@ -20,11 +20,11 @@
            [org.bukkit.potion Potion PotionEffect PotionEffectType]
            [org.bukkit.inventory ItemStack]
            [org.bukkit.util Vector]
-           [org.bukkit Location Effect]
+           [org.bukkit Location Effect Sound]
            [org.bukkit.block Biome]
            [org.bukkit.event.block Action]
            [org.bukkit.enchantments Enchantment])
-  (:import #_(twitter.callbacks.protocols SyncSingleCallback)
+  #_(:import #_(twitter.callbacks.protocols SyncSingleCallback)
            [de.ntcomputer.minecraft.controllablemobs.api ControllableMobs]
            [de.ntcomputer.minecraft.controllablemobs.api.actions ActionState
             ActionType]
@@ -64,6 +64,8 @@
   (Bukkit/getPlayer "raa0121"))
 (defn bgnori []
   (Bukkit/getPlayer "bgnori"))
+(defn sasanomiya []
+  (Bukkit/getPlayer "sasanomiya"))
 
 (def special-arrows (atom #{}))
 (defn projectile-hit-event [evt]
@@ -160,8 +162,15 @@
               (dosync (ref-set skeleton-shooting false)))
             :else nil))
         Player
-        (when (#{(ujm) (mozukusoba)} shooter)
-          (swap! special-arrows conj projectile))
+        (if (or
+              (= -0.0784000015258789 (.getY (.getVelocity shooter)))
+              (.isLiquid (.getBlock (.getLocation shooter))))
+          (when (and
+                  (#{(ujm) (mozukusoba)} shooter)
+                  (not (.isSneaking shooter)))
+            (swap! special-arrows conj projectile))
+          (later
+            (.setVelocity shooter (.multiply (.getVelocity projectile) -0.7))))
         nil)
       nil)))
 
@@ -181,6 +190,10 @@
         (.remove (.getInventory player) itemstack)
         (.setAmount itemstack (dec amount))))))
 
+(defn player-ride-spider [player target]
+  (when (nil? (.getTarget target))
+    (.setPassenger target player)))
+
 (defn player-interact-entity-event [evt]
   (let [target (.getRightClicked evt)
         player (.getPlayer evt)]
@@ -195,6 +208,8 @@
         (when (= 0 (rand-int 10))
           (.spawn (.getWorld target) (.getLocation target) Giant)
           (.remove target)))
+      Spider
+      (player-ride-spider player target)
       nil)))
 
 (def mozukusoba-house
@@ -226,30 +241,38 @@
   (let [entity (.getEntity evt)]
     (condp instance? entity
       Zombie
-      (when (= org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason/NATURAL (.getSpawnReason evt))
-        (when (= 0 (rand-int 3))
-          (let [[new-cp new-hp] (rand-nth [[Material/IRON_CHESTPLATE 50] [Material/DIAMOND_CHESTPLATE 500]])]
-            (.setChestplate (.getEquipment entity) (ItemStack. new-cp 1))
-            (.setMaxHealth entity new-hp)
-            (.setHealth entity new-hp)))
-        (when (= 0 (rand-int 10))
-          (.spawn (.getWorld entity) (.getLocation entity) Zombie))
-        (let [eq (.getEquipment entity)]
-          (.setItemInHand eq (ItemStack. (rand-nth weapons) 1))
-          (def helmets
-            {Material/AIR nil
-             Material/LEATHER_HELMET nil
-             Material/STONE_PLATE nil
-             Material/PUMPKIN nil
-             Material/TNT nil
-             Material/SKULL_ITEM (range 0 5)})
-          (let [[helmet data] (rand-nth (vec helmets))
-                is (ItemStack. helmet 1)]
-            (when data
-              (.setData (.getData is) (rand-nth data)))
-            (.setHelmet eq is))))
+      (do
+        (condp = (.getSpawnReason evt)
+          CreatureSpawnEvent$SpawnReason/NATURAL
+          (do
+            (when (= 0 (rand-int 3))
+              (let [[new-cp new-hp] (rand-nth [[Material/IRON_CHESTPLATE 50]
+                                               [Material/GOLD_CHESTPLATE 50]
+                                               [Material/DIAMOND_CHESTPLATE 100]])]
+                (.setChestplate (.getEquipment entity) (ItemStack. new-cp 1))
+                (.setMaxHealth entity new-hp)
+                (.setHealth entity new-hp)))
+            (when (= 0 (rand-int 10))
+              (.spawn (.getWorld entity) (.getLocation entity) Zombie))
+            (let [eq (.getEquipment entity)]
+              (.setItemInHand eq (ItemStack. (rand-nth weapons) 1))
+              (def helmets
+                {Material/AIR nil
+                 Material/LEATHER_HELMET nil
+                 Material/STONE_PLATE nil
+                 Material/PUMPKIN nil
+                 Material/TNT nil
+                 Material/SKULL_ITEM (range 0 5)})
+              (let [[helmet data] (rand-nth (vec helmets))
+                    is (ItemStack. helmet 1)]
+                (when data
+                  (.setData (.getData is) (rand-nth data)))
+                (.setHelmet eq is))))
+          CreatureSpawnEvent$SpawnReason/SPAWNER
+          (.setChestplate (.getEquipment entity) nil)
+          nil))
       Skeleton
-      (when (= org.bukkit.event.entity.CreatureSpawnEvent$SpawnReason/NATURAL (.getSpawnReason evt))
+      (when (= CreatureSpawnEvent$SpawnReason/NATURAL (.getSpawnReason evt))
         (case (rand-int 4)
           0
           (.setHelmet (.getEquipment entity) (ItemStack. Material/IRON_HELMET 1))
@@ -264,6 +287,57 @@
   (let [item (.getEntity evt)]
     (when (= Material/STATIONARY_WATER (.getType (.getItemStack item)))
       (.setCancelled evt true))))
+
+(defn item-despawn-event [evt]
+  #_(let [item (.getEntity evt)
+        is (.getItemStack item)]
+    (prn (.getType (.getBlock (.getLocation item))))
+    (when (= Material/FIRE (.getType (.getBlock (.getLocation item))))
+      (prn 'despawn (.getType is)))))
+
+(def combust-item-queue (atom []))
+
+(defn entity-combust-event [evt]
+  (let [entity (.getEntity evt)]
+    (when (instance? Item entity)
+      #_(when (= Material/COBBLESTONE (.getType (.getItemStack entity)))
+        (.createExplosion (.getWorld entity) (.getLocation entity) 0.1 false))
+      (let [is (.getItemStack entity)]
+        (condp = (.getType is)
+          Material/ROTTEN_FLESH
+          (when (= [Material/REDSTONE Material/REDSTONE Material/REDSTONE]
+                   (vec (take 3 @combust-item-queue)))
+            (let [loc (.getLocation entity)
+                  klass (rand-nth [Zombie Skeleton Spider Enderman Creeper Blaze Squid PigZombie Ghast])]
+              (.playEffect (.getWorld loc) loc Effect/ENDER_SIGNAL nil)
+              (.playSound (.getWorld loc) loc Sound/CAT_HISS 1.0 1.0)
+              (future
+                (dotimes [_ 5]
+                  (Thread/sleep 1000)
+                  (later (.spawn (.getWorld loc) loc klass))))))
+          Material/RAW_BEEF
+          (let [velo (.getVelocity entity)
+                new-item (.dropItem (.getWorld entity) (.add (.getLocation entity) 0.0 0.9 0.0) (ItemStack. Material/COOKED_BEEF (.getAmount is)))]
+            (.remove entity)
+            (later (.setVelocity new-item (.add (.multiply velo 1.5)
+                                                (Vector. 0.0 0.5 0.0)))))
+          Material/COOKED_BEEF
+          (do
+            (.remove entity)
+            (.dropItem (.getWorld entity) (.add (.getLocation entity) 0.0 0.9 0.0) (ItemStack. Material/RAW_BEEF (.getAmount is))))
+          nil)
+        (swap! combust-item-queue conj (.getType is))
+        (future
+          (Thread/sleep 5000)
+          (swap! combust-item-queue rest))))))
+
+#_(defn entity-combust-by-block-event [evt]
+  (prn 'entity-combust-by-block-event)
+  (let [entity (.getEntity evt)]
+    (when (instance? Item entity)
+      (let [is (.getItemStack entity)
+            block (.getCombustr evt)]
+        (.sendMessage (ujm) (prn-str 'combust block is))))))
 
 (defn block-physics-event [evt]
   (comment (let [block (.getBlock evt)]
@@ -419,7 +493,7 @@
             ftype2 ({Material/GRASS Material/DIRT}
                      ftype ftype)
             fblock (.spawnFallingBlock (.getWorld block) (.getLocation block) ftype2 (.getData block))]
-        (.setVelocity fblock (doto (.getVelocity fblock) (.add (org.bukkit.util.Vector. 0.0 1.5 0.0))))
+        (.setVelocity fblock (doto (.getVelocity fblock) (.add (Vector. 0.0 1.5 0.0))))
         (when (= Material/GRASS (.getMaterial fblock))
           (.setDropItem fblock )))
       (.setType block Material/AIR))
@@ -429,30 +503,37 @@
         (.setType block (rand-nth random-block-candidates))))))
 
 (defn entity-explode-event [evt]
-  (when (instance? TNTPrimed (.getEntity evt))
-    (let [lapises (filter #(= Material/LAPIS_BLOCK (.getType %)) (vec (.blockList evt)))]
-      (if (empty? lapises)
-        (tnt-explode-event-without-lapis evt)
+  (let [entity (.getEntity evt)]
+    (when (instance? TNTPrimed entity)
+      (if (when-let [vehicle (.getVehicle entity)]
+            (instance? Minecart vehicle))
         (do
           (.setCancelled evt true)
-          (doseq [lapis lapises
-                  :let [loc (.getLocation lapis)]
-                  [x y z loc-around] (for [[x y z] [[0 0 1] [0 1 0] [1 0 0] [0 0 -1] [0 -1 0] [-1 0 0]]]
-                                       [x y z (.add (.clone loc) x y z)])
-                  :when (#{Material/REDSTONE_TORCH_ON Material/REDSTONE_TORCH_OFF}
-                          (.getType (.getBlock loc-around)))
-                  :let [[replace-to-type replace-to-data] (let [replace-to (.getBlock (.add (.clone loc-around) x y z))]
-                                                            [(.getType replace-to) (.getData replace-to)])
-                        [blocks-line blocks-leftover] (split-with #(not= Material/LAPIS_BLOCK (.getType %))
-                                                                  (map #(.getBlock %)
-                                                                       (take 200 (iterate #(doto % (.add x y z)) (.clone loc-around)))))]
-                  :when (not (#{Material/DIAMOND_ORE Material/DIAMOND_BLOCK} replace-to-type))
-                  :when (when-let [firstleftover (first blocks-leftover)]
-                          (= Material/LAPIS_BLOCK (.getType firstleftover)))]
-            (.strikeLightningEffect (.getWorld loc-around) loc-around)
-            (doseq [block blocks-line]
-              (.setType block replace-to-type)
-              (.setData block replace-to-data))))))))
+          (let [vehicle (.getVehicle entity)]
+            (later (.setPassenger vehicle (.spawn (.getWorld vehicle) (.getLocation vehicle) TNTPrimed)))))
+        (let [lapises (filter #(= Material/LAPIS_BLOCK (.getType %)) (vec (.blockList evt)))]
+          (if (empty? lapises)
+            (tnt-explode-event-without-lapis evt)
+            (do
+              (.setCancelled evt true)
+              (doseq [lapis lapises
+                      :let [loc (.getLocation lapis)]
+                      [x y z loc-around] (for [[x y z] [[0 0 1] [0 1 0] [1 0 0] [0 0 -1] [0 -1 0] [-1 0 0]]]
+                                           [x y z (.add (.clone loc) x y z)])
+                      :when (#{Material/REDSTONE_TORCH_ON Material/REDSTONE_TORCH_OFF}
+                              (.getType (.getBlock loc-around)))
+                      :let [[replace-to-type replace-to-data] (let [replace-to (.getBlock (.add (.clone loc-around) x y z))]
+                                                                [(.getType replace-to) (.getData replace-to)])
+                            [blocks-line blocks-leftover] (split-with #(not= Material/LAPIS_BLOCK (.getType %))
+                                                                      (map #(.getBlock %)
+                                                                           (take 200 (iterate #(doto % (.add x y z)) (.clone loc-around)))))]
+                      :when (not (#{Material/DIAMOND_ORE Material/DIAMOND_BLOCK} replace-to-type))
+                      :when (when-let [firstleftover (first blocks-leftover)]
+                              (= Material/LAPIS_BLOCK (.getType firstleftover)))]
+                (.strikeLightningEffect (.getWorld loc-around) loc-around)
+                (doseq [block blocks-line]
+                  (.setType block replace-to-type)
+                  (.setData block replace-to-data))))))))))
 
 (defn player-toggle-sprint-event [evt]
   (let [player (.getPlayer evt)]
@@ -579,8 +660,9 @@
                     2)
                   1)]
           (.teleport player (doto (.getTo evt) (.add 0 n 0))))
-        (.setVelocity player (org.bukkit.util.Vector. 0 5 0)))
-      (let [to (.getTo evt)
+        (.setVelocity player (Vector. 0 5 0)))
+      (when (= "world" (.getName (.getWorld player)))
+        (let [to (.getTo evt)
             down (.add (.clone to) 0 -1 0)]
         (when (and
                 (not (.isFlying player))
@@ -592,17 +674,27 @@
                      (- y (int y))) 0.1)
                 (< 0.1 (let [z (Math/abs (.getZ to))]
                          (- z (int z))) 0.9))
-          (.setTo evt (.add (.clone to) 0 -1 0)))))))
+          (.setTo evt (.add (.clone to) 0 -1 0))))))))
+
+(def chestplates
+  #{Material/LEATHER_CHESTPLATE
+    Material/IRON_CHESTPLATE
+    Material/CHAINMAIL_CHESTPLATE
+    Material/GOLD_CHESTPLATE
+    Material/DIAMOND_CHESTPLATE})
 
 (defn entity-death-event [evt]
-  (let [entity (.getEntity evt)]
+  (let [entity (.getEntity evt)
+        killer (.getKiller entity)]
     (when (instance? Zombie entity)
-      (when (instance? Player (.getKiller entity))
-        (when (= Material/TNT (.getType (.getHelmet (.getEquipment entity))))
-          (.createExplosion (.getWorld entity) (.getLocation entity) 0.1 false))
-        (when (= Material/BOW (.getType (.getItemInHand (.getEquipment entity))))
-          (.setDroppedExp evt 20)))
-      (.setDroppedExp evt (int (/ (.getMaxHealth entity) 2))))
+      (when (instance? Player killer)
+        (let [helmet (.getHelmet (.getEquipment entity))
+              weapon (.getItemInHand (.getEquipment entity))]
+          (when (= Material/TNT (.getType helmet))
+            (.createExplosion (.getWorld entity) (.getLocation entity) 0.1 false))
+            (when (= Material/BOW (.getType weapon))
+              (.setDroppedExp evt (+ 10 (.getDroppedExp evt))))))
+      #_(.setDroppedExp evt (int (/ (.getMaxHealth entity) 2))))
     (when (instance? Giant entity)
       (.setDroppedExp evt 100))))
 
@@ -770,51 +862,81 @@
           (catch Exception e (prn e))))
       (prn 'invalid-tokens tokens))))
 
+(defn zombie-chestplate-break-handler [evt entity attacker]
+  (when (and
+          (instance? Zombie entity)
+          (not (instance? PigZombie entity))
+          (chestplates (.getType (.getChestplate (.getEquipment entity)))))
+    (when (<= (.getHealth entity) (.getDamage evt))
+      (.setCancelled evt true)
+      (let [new-entity (.spawn (.getWorld entity) (.getLocation entity) Zombie)]
+        (.setArmorContents (.getEquipment new-entity) (.getArmorContents (.getEquipment entity)))
+        (.setChestplate (.getEquipment new-entity) nil)
+        (.addPotionEffect new-entity (PotionEffect. PotionEffectType/SPEED 400 2))
+        (dotimes [_ (.getMaxHealth entity)]
+          (.setExperience (.spawn (.getWorld entity) (.getLocation entity) ExperienceOrb)
+                          1))
+        (.damage new-entity 1 attacker))
+      (.remove entity))))
+
 (defn entity-damage-event [evt]
   (let [entity (.getEntity evt)]
-    (condp = (.getCause evt)
-      org.bukkit.event.entity.EntityDamageEvent$DamageCause/FALL
-      (when (instance? LivingEntity entity)
-        (let [loc (.getLocation entity)
-              block (.getBlock loc)
-              block-below (.getBlock (.add (.clone loc) 0 -1 0))]
-          (cond
-            (= Material/GRASS (.getType block-below))
-            (do
-              (.setCancelled evt true)
-              (.setType block-below Material/DIRT)
-              (.setVelocity entity (.add (.getVelocity entity) (Vector. 0.0 0.4 0.0))))
-            (= Material/BED_BLOCK (.getType block))
-            (do
-              (.setCancelled evt true)
-              (when-not (.isSneaking entity)
-                (.setVelocity entity (doto (.getVelocity entity)
-                                       (.setY 0.9))))))))
-      org.bukkit.event.entity.EntityDamageEvent$DamageCause/PROJECTILE
-      (let [attacker (.getDamager evt)]
-        (when-let [shooter (.getShooter attacker)]
+    (if (and (instance? LivingEntity entity)
+             (= Material/GOLD_BLOCK (.getType (.getBlock (.add (.getLocation entity) 0 -1 0)))))
+      (.setCancelled evt true)
+      (condp = (.getCause evt)
+        EntityDamageEvent$DamageCause/FALL
+        (when (instance? LivingEntity entity)
+          (condp instance? entity
+            Spider
+            (.setCancelled evt true)
+            (let [loc (.getLocation entity)
+                  block (.getBlock loc)
+                  block-below (.getBlock (.add (.clone loc) 0 -1 0))]
+              (cond
+                (= Material/GRASS (.getType block-below))
+                (do
+                  (.setCancelled evt true)
+                  (.setType block-below Material/DIRT)
+                  (.setVelocity entity (.add (.getVelocity entity) (Vector. 0.0 0.4 0.0))))
+                (= Material/BED_BLOCK (.getType block))
+                (do
+                  (.setCancelled evt true)
+                  (when-not (.isSneaking entity)
+                    (.setVelocity entity (doto (.getVelocity entity)
+                                           (.setY 0.9)))))))))
+        EntityDamageEvent$DamageCause/PROJECTILE
+        (let [attacker (.getDamager evt)]
+          (when-let [shooter (.getShooter attacker)]
+            (when (and
+                    (instance? Snowball attacker)
+                    (< 0 (.getFireTicks attacker)))
+              (.setFireTicks entity 200)
+              (.damage entity 1 shooter)))
+          (when (instance? Giant entity)
+            (let [weapon (if-let [shooter (.getShooter attacker)]
+                           (when (instance? Player shooter)
+                             (.getItemInHand shooter))
+                           nil)]
+              (dotimes [i (rand-nth [0 0 0 3 5])]
+                (.setItemInHand (.getEquipment
+                                  (.spawn (.getWorld entity) (.getLocation entity) Zombie))
+                                weapon)))))
+        EntityDamageEvent$DamageCause/ENTITY_ATTACK
+        (when-let [attacker (.getDamager evt)]
+          (zombie-chestplate-break-handler evt entity attacker)
           (when (and
-                  (instance? Snowball attacker)
-                  (< 0 (.getFireTicks attacker)))
-            (.setFireTicks entity 200)
-            (.damage entity 1 shooter)))
-        (when (instance? Giant entity)
-          (let [weapon (if-let [shooter (.getShooter attacker)]
-                         (when (instance? Player shooter)
-                           (.getItemInHand shooter))
-                         nil)]
-            (dotimes [i (rand-nth [0 0 0 3 5])]
-              (.setItemInHand (.getEquipment
-                                (.spawn (.getWorld entity) (.getLocation entity) Zombie))
-                              weapon)))))
-      org.bukkit.event.entity.EntityDamageEvent$DamageCause/ENTITY_ATTACK
-      (when-let [attacker (.getDamager evt)]
-        (when (and
-                (instance? Player attacker)
-                (.getItemInHand attacker)
-                (= Material/BOOK_AND_QUILL (.getType (.getItemInHand attacker))))
-          (player-use-book-event attacker entity (.getItemInHand attacker))))
-      nil)))
+                  (instance? Player attacker)
+                  (.getItemInHand attacker)
+                  (= Material/BOOK_AND_QUILL (.getType (.getItemInHand attacker))))
+            (player-use-book-event attacker entity (.getItemInHand attacker))))
+        EntityDamageEvent$DamageCause/BLOCK_EXPLOSION
+        (condp instance? entity
+          Minecart (.setCancelled evt true)
+          Player (when (.isSneaking entity)
+                   (.setCancelled evt true))
+          nil)
+        nil))))
 
 (defn tmp-fence2wall []
   (later (doseq [x (range -10 11)
@@ -868,11 +990,22 @@
             (.setColor (get colors
                             (swap! colors-i #(rem (inc %) (count colors)))))))
         (.setChestplate (.getInventory player) armor))))
-  (doseq [zombie (.getEntitiesByClass (Bukkit/getWorld "world") Zombie)
-          :when (= Material/BOW (.getType (.getItemInHand (.getEquipment zombie))))]
-    (when-let [target (.getTarget zombie)]
-      (when (= 0 (rand-int 3))
-        (.launchProjectile zombie Arrow)))))
+  (when (= 0 (rand-int 0))
+    (doseq [zombie (.getEntitiesByClass (Bukkit/getWorld "world") Zombie)
+            :when (= Material/BOW (.getType (.getItemInHand (.getEquipment zombie))))]
+      (when-let [target (.getTarget zombie)]
+        (when (= 0 (rand-int 3))
+          (.launchProjectile zombie Arrow)))))
+  (when (= 0 (rand-int 3))
+    (doseq [spider (.getEntitiesByClass (Bukkit/getWorld "world") Spider)
+            :let [target (.getTarget spider)]
+            :when target]
+      (.setVelocity spider
+                    (.multiply (.toVector
+                                 (.subtract (.add (.getLocation target) 0 2 0) (.getLocation spider)))
+                               0.2))
+      (.playEffect (.getWorld spider) (.getLocation spider) Effect/ENDER_SIGNAL nil)
+      (.playSound (.getWorld spider) (.getLocation spider) Sound/SPIDER_IDLE 1.0 0.0))))
 
 (defonce swank* nil)
 (defonce t* nil)
@@ -885,7 +1018,7 @@
   (def t*
     (.scheduleSyncRepeatingTask (Bukkit/getScheduler) plugin* #'periodically1tick 0 1)))
 
-(defn spawn-safe [loc klass]
+#_(defn spawn-safe [loc klass]
   (let [e (.spawn (.getWorld loc) loc klass)
         m (ControllableMobs/assign e true)]
     #_(.clearAIBehaviors m)

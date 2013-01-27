@@ -4,4 +4,4 @@ version: 2.0.0
 website: http://ujihisa.blogspot.com
 author: Tatsuhiro Ujihisa
 description: twitter @mc681
-depend: [ControllableMobsAPI]
+#depend: [ControllableMobsAPI]
