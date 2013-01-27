@@ -1,8 +1,11 @@
 (ns mc68.core
   (:require [twitter.oauth]
             [twitter.api.restful]
-            [swank.swank])
-  (:import [org.bukkit Bukkit DyeColor Material Color]
+            [swank.swank]
+            [cloft.sound :as s]
+            [cloft.loc :as loc]
+            [cloft.material :as m])
+  (:import [org.bukkit Bukkit DyeColor Material Color Location Effect]
            [org.bukkit.material Wool Dye]
            [org.bukkit.entity Animals Arrow Blaze Boat CaveSpider Chicken
             ComplexEntityPart ComplexLivingEntity Cow Creature Creeper Egg
@@ -20,7 +23,6 @@
            [org.bukkit.potion Potion PotionEffect PotionEffectType]
            [org.bukkit.inventory ItemStack]
            [org.bukkit.util Vector]
-           [org.bukkit Location Effect Sound]
            [org.bukkit.block Biome]
            [org.bukkit.event.block Action]
            [org.bukkit.enchantments Enchantment])
@@ -309,8 +311,8 @@
                    (vec (take 3 @combust-item-queue)))
             (let [loc (.getLocation entity)
                   klass (rand-nth [Zombie Skeleton Spider Enderman Creeper Blaze Squid PigZombie Ghast])]
-              (.playEffect (.getWorld loc) loc Effect/ENDER_SIGNAL nil)
-              (.playSound (.getWorld loc) loc Sound/CAT_HISS 1.0 1.0)
+              (loc/play-effect loc Effect/ENDER_SIGNAL nil)
+              (loc/play-sound loc s/cat-hiss 1.0 1.0)
               (future
                 (dotimes [_ 5]
                   (Thread/sleep 1000)
@@ -432,10 +434,24 @@
                                 Material/STATIONARY_WATER (byte 7))]
       (.setVelocity w (.multiply vect 0.7)))))
 
+(defn modify-foodlevel [player f]
+  (assert (instance? Player player) player)
+  (.setFoodLevel player (f (.getFoodLevel player))))
+
+(defn player-eat-gold-melon [player]
+  (when (and
+          (= m/speckled-melon (.getType (.getItemInHand player)))
+          (not (.hasPotionEffect player PotionEffectType/FAST_DIGGING)))
+    (.addPotionEffect player (PotionEffect. PotionEffectType/FAST_DIGGING (* 20 61) 0))
+    (modify-foodlevel player inc)
+    (consume-item player)
+    (.sendMessage player "fast digging!")))
+
 (defn player-interact-event [evt]
   (let [player (.getPlayer evt)]
     (when (#{Action/RIGHT_CLICK_AIR Action/RIGHT_CLICK_BLOCK} (.getAction evt))
-      (player-drink-milk player))
+      (player-drink-milk player)
+      (player-eat-gold-melon player))
     (when-let [block (.getClickedBlock evt)]
       (player-interact-block-event evt player block))
     #_(when (= Material/WOOD_HOE (.getType (.getItemInHand player)))
@@ -880,9 +896,11 @@
       (.remove entity))))
 
 (defn entity-damage-event [evt]
-  (let [entity (.getEntity evt)]
+  (let [entity (.getEntity evt)
+        loc (.getLocation entity)]
     (if (and (instance? LivingEntity entity)
-             (= Material/GOLD_BLOCK (.getType (.getBlock (.add (.getLocation entity) 0 -1 0)))))
+             (= Material/GOLD_BLOCK
+                (.getType (.getBlock (.add (.clone loc) 0.0 -0.5 0.0)))))
       (.setCancelled evt true)
       (condp = (.getCause evt)
         EntityDamageEvent$DamageCause/FALL
@@ -890,8 +908,7 @@
           (condp instance? entity
             Spider
             (.setCancelled evt true)
-            (let [loc (.getLocation entity)
-                  block (.getBlock loc)
+            (let [block (.getBlock loc)
                   block-below (.getBlock (.add (.clone loc) 0 -1 0))]
               (cond
                 (= Material/GRASS (.getType block-below))
@@ -937,12 +954,6 @@
                    (.setCancelled evt true))
           nil)
         nil))))
-
-(defn entity-damage-by-block-event [evt]
-  nil)
-
-(defn entity-damage-by-entity-event [evt]
-  nil)
 
 (defn tmp-fence2wall []
   (later (doseq [x (range -10 11)
@@ -1011,7 +1022,7 @@
                                  (.subtract (.add (.getLocation target) 0 2 0) (.getLocation spider)))
                                0.2))
       (.playEffect (.getWorld spider) (.getLocation spider) Effect/ENDER_SIGNAL nil)
-      (.playSound (.getWorld spider) (.getLocation spider) Sound/SPIDER_IDLE 1.0 0.0))))
+      (.playSound (.getWorld spider) (.getLocation spider) s/spider-idle 1.0 0.0))))
 
 (defonce swank* nil)
 (defonce t* nil)
