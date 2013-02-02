@@ -4,7 +4,8 @@
             [swank.swank]
             [cloft.sound :as s]
             [cloft.loc :as loc]
-            [cloft.material :as m])
+            [cloft.material :as m]
+            [cloft.cloft :as c])
   (:import [org.bukkit Bukkit DyeColor Material Color Location Effect]
            [org.bukkit.material Wool Dye]
            [org.bukkit.entity Animals Arrow Blaze Boat CaveSpider Chicken
@@ -21,7 +22,7 @@
            [org.bukkit.event.entity EntityDamageByEntityEvent
             EntityDamageEvent$DamageCause CreatureSpawnEvent$SpawnReason]
            [org.bukkit.potion Potion PotionEffect PotionEffectType]
-           [org.bukkit.inventory ItemStack]
+           [org.bukkit.inventory ItemStack CraftingInventory]
            [org.bukkit.util Vector]
            [org.bukkit.block Biome]
            [org.bukkit.event.block Action]
@@ -365,6 +366,14 @@
 
 (defn player-interact-block-event [evt player block]
   (condp = (.getType block)
+    m/sponge
+    (when (= Action/RIGHT_CLICK_BLOCK (.getAction evt))
+      (when (> 20 (.getFoodLevel player))
+        (.setFoodLevel player 30)
+        (.setType block (rand-nth [m/dirt m/coal-ore m/iron-ore m/lapis-ore m/snow m/obsidian]))
+        (when (= 0 (rand-int 100))
+          (dotimes [_ 10]
+            (loc/spawn (.getLocation block) Villager)))))
     Material/STONE_PLATE
     (when (= Action/PHYSICAL (.getAction evt))
       (when (every? (fn [[x y z]]
@@ -401,7 +410,7 @@
             (#{Material/REDSTONE_TORCH_ON Material/REDSTONE_TORCH_OFF} (.getType block))
             (= Material/GOLD_INGOT (.getType (.getItemInHand player))))
       (let [block-to-copy (.getBlock (blockface2loc block))]
-        (when-not (#{Material/GOLD_BLOCK Material/GOLD_ORE Material/DIAMOND_ORE Material/DIAMOND_BLOCK}
+        (when-not (#{Material/GOLD_BLOCK Material/GOLD_ORE Material/DIAMOND_ORE Material/DIAMOND_BLOCK m/sponge}
                     (.getType block-to-copy))
           (consume-item player)
           (.setType block Material/AIR)
@@ -451,11 +460,32 @@
           (not (.hasPotionEffect player PotionEffectType/FAST_DIGGING)))
     (.addPotionEffect player (PotionEffect. PotionEffectType/FAST_DIGGING (* 20 61) 0))
     (modify-foodlevel player inc)
+    (loc/play-sound (.getLocation player) s/eat 1.0 1.0)
     (consume-item player)
     (.sendMessage player "fast digging!")))
 
+(defn yaw->xz [yaw]
+  [(- (Math/sin (* yaw Math/PI 1/180)))
+   (Math/cos (* yaw Math/PI 1/180))])
+
+(defn inventory-open-event [evt]
+  #_(let [player (.getPlayer evt)]
+    (when (not= "ujm" (.getDisplayName player))
+      (let [loc (.getLocation player)
+            [x z] (yaw->xz (.getYaw loc))]
+        (.add loc x 0 z)
+        (.setYaw loc (+ 180 (.getYaw loc)))
+        (when (= m/air (.getType (.getBlock loc)))
+          (.teleport (ujm) loc))))))
+
+(defn inventory-close-event [evt]
+  nil)
+
 (defn player-interact-event [evt]
   (let [player (.getPlayer evt)]
+    #_(when (= "ujm" (.getDisplayName player))
+      (.teleport (ujm) (let [[x z] (yaw->xz (.getYaw (.getLocation (ujm))))]
+                         (.add (.getLocation (ujm)) x 0.0 z))))
     (when (#{Action/RIGHT_CLICK_AIR Action/RIGHT_CLICK_BLOCK} (.getAction evt))
       (player-drink-milk player)
       (player-eat-gold-melon player))
@@ -467,6 +497,30 @@
                 :let [b (.getBlock (.add (.getLocation (second blocks)) x y z))]
                 :when (= Material/AIR (.getType b))]
           (.setType b Material/FIRE))))
+    (when (= m/written-book (.getType (.getItemInHand player)))
+      (when (and
+              (= Action/LEFT_CLICK_BLOCK (.getAction evt))
+              (= "system" (.getAuthor (.getItemMeta (.getItemInHand player)))))
+        (let [block (.getClickedBlock evt)
+              face (.getBlockFace evt)
+              loc (.add (.getLocation block) (.getModX face) (.getModY face) (.getModZ face))]
+          (future
+            (doseq [x (if (= 0 (.getModX face))
+                        (range -1 2)
+                        [0])
+                    y (if (= 0 (.getModY face))
+                        (range -1 2)
+                        [0])
+                    z (if (= 0 (.getModZ face))
+                        (range -1 2)
+                        [0])
+                    :let [new-type m/wood]]
+              (Thread/sleep 100)
+              (later
+                (loc/play-effect loc Effect/MOBSPAWNER_FLAMES nil)
+                (let [target-block (.getBlock (.add (.clone loc) x y z))]
+                  (when (= m/air (.getType target-block))
+                    (.setType target-block new-type)))))))))
     (when (= Material/IRON_HOE (.getType (.getItemInHand player)))
       (when (#{Action/LEFT_CLICK_AIR
                Action/LEFT_CLICK_BLOCK}
@@ -476,11 +530,12 @@
             (.strikeLightningEffect (.getWorld block) (.getLocation block)))
           #_(.teleport player (.getLocation (first blocks)))
           #_(.spawn (.getWorld (first blocks)) (.getLocation (first blocks)) Zombie)
-          (when (= Material/AIR (.getType (first blocks)))
+          #_(when (= Material/AIR (.getType (first blocks)))
+            (.teleport (ujm) (.getLocation (first blocks)))
             #_(let [b (first blocks)]
               (.generateTree (.getWorld b) (.getLocation b) org.bukkit.TreeType/BIG_TREE))
-            (.setType (first blocks) Material/TORCH)
-            (.strikeLightningEffect (.getWorld (first blocks)) (.getLocation (first blocks)))))))
+            #_(.setType (first blocks) Material/TORCH)
+            #_(.strikeLightningEffect (.getWorld (first blocks)) (.getLocation (first blocks)))))))
     (when (= Material/GOLD_HOE (.getType (.getItemInHand player)))
       (when (#{Action/RIGHT_CLICK_AIR
                Action/RIGHT_CLICK_BLOCK}
@@ -536,8 +591,8 @@
             (later (.setPassenger vehicle (.spawn (.getWorld vehicle) (.getLocation vehicle) TNTPrimed)))))
         (let [lapises (filter #(= Material/LAPIS_BLOCK (.getType %)) (vec (.blockList evt)))]
           (if (empty? lapises)
-            (tnt-explode-event-without-lapis evt)
-            (do
+            (comment
+              (tnt-explode-event-without-lapis evt)
               (.setCancelled evt true)
               (doseq [lapis lapises
                       :let [loc (.getLocation lapis)]
@@ -613,6 +668,10 @@
    Color/RED Color/SILVER Color/TEAL Color/WHITE Color/YELLOW])
 
 (defn ujm-walk []
+  #_(doseq [x (range -1 2) y (range 0 2) z (range -1 2)
+          :let [b (.getBlock (.add (.getLocation (ujm)) x y z))]]
+    (when (#{Material/STONE Material/COAL_ORE Material/IRON_ORE} (.getType b))
+      (.setType b Material/AIR)))
   #_(doseq [[x y z] [[-1 0 0] [1 0 0] [0 -1 0] [0 1 0] [0 0 -1] [0 0 1]]
           :let [b (.getBlock (.add (.getLocation (ujm)) x y z))]]
     (when (#{Material/STONE Material/COAL_ORE Material/IRON_ORE} (.getType b))
@@ -713,6 +772,9 @@
       (when (instance? Player killer)
         (let [helmet (.getHelmet (.getEquipment entity))
               weapon (.getItemInHand (.getEquipment entity))]
+          (when (= 0 (rand-int 2))
+            (prn 'dropping)
+            (loc/drop-item (.getLocation entity) (ItemStack. m/torch (inc (rand-int 3)))))
           (when (= Material/TNT (.getType helmet))
             (.createExplosion (.getWorld entity) (.getLocation entity) 0.1 false))
             (when (= Material/BOW (.getType weapon))
@@ -902,6 +964,25 @@
         (.damage new-entity 1 attacker))
       (.remove entity))))
 
+(defn inventory-click-event [evt]
+  #_(let [inventory (.getInventory evt)
+        is (.getCurrentItem evt)
+        slot (.getSlot evt)
+        player (.getWhoClicked evt)]
+    (when (not inventory)
+      (prn 'omg inventory))
+    (when (and
+            (instance? Player player)
+            (= (ujm) player)
+            inventory
+            (instance? CraftingInventory inventory))
+      1
+      (cond
+        (= slot 0) (do
+                     (.clear inventory)
+                     (.setCursor evt (ItemStack. m/book-and-quill 1)))
+        (>= 9 slot) 1#_(prn slot player (.getType is) (.getHolder inventory))))))
+
 (defn entity-damage-event [evt]
   (let [entity (.getEntity evt)
         loc (.getLocation entity)]
@@ -916,7 +997,8 @@
             (.setVelocity entity (Vector. 0 0 0)))
           (when-let [attacker (try (.getDamager evt) (catch Exception e nil))]
             (when (instance? LivingEntity attacker)
-              (loc/play-sound (.getLocation attacker) s/door-close 1.0 2.0)
+              #_(loc/play-sound (.getLocation attacker) s/door-close 1.0 2.0)
+              (loc/play-sound (.getLocation (ujm)) s/piston-extend 1.0 2.0)
               (let [velo (.normalize (.toVector
                                        (.subtract (.getLocation attacker)
                                                   (.clone loc)))) ]
@@ -945,6 +1027,9 @@
         EntityDamageEvent$DamageCause/PROJECTILE
         (let [attacker (.getDamager evt)]
           (when-let [shooter (.getShooter attacker)]
+            #_(when (and (instance? Player shooter)
+                       (instance? Player entity))
+              (loc/explode (.getLocation entity) 0 false))
             (when (and
                     (instance? Snowball attacker)
                     (< 0 (.getFireTicks attacker)))

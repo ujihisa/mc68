@@ -6,4 +6,5 @@
   :dependencies [[cloft "1.0.0-SNAPSHOT"]
                  [org.clojure/clojure "1.4.0"]
                  [twitter-api "0.6.13"]]
+  :dev-dependencies [[org.bukkit/bukkit "1.4.7-R1.1-SNAPSHOT"]]
   :java-source-paths ["javasrc"])
