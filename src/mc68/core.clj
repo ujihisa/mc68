@@ -69,6 +69,8 @@
   (Bukkit/getPlayer "bgnori"))
 (defn sasanomiya []
   (Bukkit/getPlayer "sasanomiya"))
+(defn momonga []
+  (Bukkit/getPlayer "supermomonga"))
 
 (def special-arrows (atom #{}))
 (defn projectile-hit-event [evt]
@@ -84,14 +86,14 @@
           (when (@special-arrows proj)
             (.remove proj))
           (doseq [t (.getNearbyEntities proj 5 3 5)
-                :when (and
-                        (instance? Monster t)
-                        (not (instance? Giant t)))]
-          (.damage t
-                   (if (= (ujm) shooter)
-                     19
-                     (hp2damage (.getHealth shooter)))
-                   shooter)))
+                  :when (and
+                          (instance? Monster t)
+                          (not (instance? Giant t)))]
+            (.damage t
+                     (if (= (ujm) shooter)
+                       19
+                       (hp2damage (.getHealth shooter)))
+                     shooter)))
         Skeleton
         (cond
           (= Material/GOLD_HELMET (.getType (.getHelmet (.getEquipment shooter))))
@@ -364,8 +366,27 @@
         (show-current-mp player)
         (.setItemInHand player (ItemStack. Material/BUCKET 1))))))
 
+(def loc-san-francisco (Location. (Bukkit/getWorld "world") -349 71 975))
+
+(defn player-physical-wood-plate [player block]
+  (let [loc (.getLocation block)]
+    (when (= (Location. (.getWorld loc) -70 57 277) loc)
+      (.teleport player loc-san-francisco))))
+
 (defn player-interact-block-event [evt player block]
   (condp = (.getType block)
+    m/jukebox
+    (do
+      (when (= Action/RIGHT_CLICK_BLOCK (.getAction evt))
+        (when (and
+                (= m/gold-record (.getType (.getItemInHand player)))
+                (not (.isPlaying (.getState block))))
+          (future
+            (Thread/sleep 100)
+            (later
+              (doseq [v (.getNearbyEntities player 15 15 15)
+                      :when (instance? Villager v)]
+                (.damage v 30)))))))
     m/sponge
     (when (= Action/RIGHT_CLICK_BLOCK (.getAction evt))
       (when (> 20 (.getFoodLevel player))
@@ -374,6 +395,9 @@
         (when (= 0 (rand-int 100))
           (dotimes [_ 10]
             (loc/spawn (.getLocation block) Villager)))))
+    m/wood-plate
+    (when (= Action/PHYSICAL (.getAction evt))
+      (player-physical-wood-plate player block))
     Material/STONE_PLATE
     (when (= Action/PHYSICAL (.getAction evt))
       (when (every? (fn [[x y z]]
@@ -585,38 +609,39 @@
     (when (instance? TNTPrimed entity)
       (if (when-let [vehicle (.getVehicle entity)]
             (instance? Minecart vehicle))
-        (do
+        (comment
           (.setCancelled evt true)
           (let [vehicle (.getVehicle entity)]
             (later (.setPassenger vehicle (.spawn (.getWorld vehicle) (.getLocation vehicle) TNTPrimed)))))
         (let [lapises (filter #(= Material/LAPIS_BLOCK (.getType %)) (vec (.blockList evt)))]
+          (.setCancelled evt true)
           (if (empty? lapises)
-            (comment
-              (tnt-explode-event-without-lapis evt)
-              (.setCancelled evt true)
-              (doseq [lapis lapises
-                      :let [loc (.getLocation lapis)]
-                      [x y z loc-around] (for [[x y z] [[0 0 1] [0 1 0] [1 0 0] [0 0 -1] [0 -1 0] [-1 0 0]]]
-                                           [x y z (.add (.clone loc) x y z)])
-                      :when (#{Material/REDSTONE_TORCH_ON Material/REDSTONE_TORCH_OFF}
-                              (.getType (.getBlock loc-around)))
-                      :let [[replace-to-type replace-to-data] (let [replace-to (.getBlock (.add (.clone loc-around) x y z))]
-                                                                [(.getType replace-to) (.getData replace-to)])
-                            [blocks-line blocks-leftover] (split-with #(not= Material/LAPIS_BLOCK (.getType %))
-                                                                      (map #(.getBlock %)
-                                                                           (take 200 (iterate #(doto % (.add x y z)) (.clone loc-around)))))]
-                      :when (not (#{Material/DIAMOND_ORE Material/DIAMOND_BLOCK} replace-to-type))
-                      :when (when-let [firstleftover (first blocks-leftover)]
-                              (= Material/LAPIS_BLOCK (.getType firstleftover)))]
-                (.strikeLightningEffect (.getWorld loc-around) loc-around)
-                (doseq [block blocks-line]
-                  (.setType block replace-to-type)
-                  (.setData block replace-to-data))))))))))
+            (tnt-explode-event-without-lapis evt)
+            (doseq [lapis lapises
+                    :let [loc (.getLocation lapis)]
+                    [x y z loc-around] (for [[x y z] [[0 0 1] [0 1 0] [1 0 0] [0 0 -1] [0 -1 0] [-1 0 0]]]
+                                         [x y z (.add (.clone loc) x y z)])
+                    :when (#{Material/REDSTONE_TORCH_ON Material/REDSTONE_TORCH_OFF}
+                            (.getType (.getBlock loc-around)))
+                    :let [[replace-to-type replace-to-data] (let [replace-to (.getBlock (.add (.clone loc-around) x y z))]
+                                                              [(.getType replace-to) (.getData replace-to)])
+                          [blocks-line blocks-leftover] (split-with #(not= Material/LAPIS_BLOCK (.getType %))
+                                                                    (map #(.getBlock %)
+                                                                         (take 200 (iterate #(doto % (.add x y z)) (.clone loc-around)))))]
+                    :when (not (#{Material/DIAMOND_ORE Material/DIAMOND_BLOCK} replace-to-type))
+                    :when (when-let [firstleftover (first blocks-leftover)]
+                            (= Material/LAPIS_BLOCK (.getType firstleftover)))]
+              (.strikeLightningEffect (.getWorld loc-around) loc-around)
+              (doseq [block blocks-line]
+                (.setType block replace-to-type)
+                (.setData block replace-to-data)))))))))
 
 (defn player-toggle-sprint-event [evt]
   (let [player (.getPlayer evt)]
     (if (.isSprinting evt)
-      (.setWalkSpeed player 0.3)
+      (if (= (ujm) player)
+        (.setWalkSpeed player 0.35)
+        (.setWalkSpeed player 0.3))
       (.setWalkSpeed player 0.2))))
 
 (defn water? [btype]
@@ -668,10 +693,15 @@
    Color/RED Color/SILVER Color/TEAL Color/WHITE Color/YELLOW])
 
 (defn ujm-walk []
-  #_(doseq [x (range -1 2) y (range 0 2) z (range -1 2)
+  #_(doseq [y (range 0 2)
+          :let [b (.getBlock (.add (.getLocation (ujm)) 0 y 1))]
+          :when (#{m/stone m/coal m/dirt m/gravel m/iron-ore} (.getType b))]
+    (.breakNaturally b (ItemStack. m/diamond-pickaxe 1)))
+  #_(doseq [x (range -2 3) y (range -1 1) z (range -2 3)
           :let [b (.getBlock (.add (.getLocation (ujm)) x y z))]]
-    (when (#{Material/STONE Material/COAL_ORE Material/IRON_ORE} (.getType b))
-      (.setType b Material/AIR)))
+    (when (#{m/dirt m/stone m/grass m/coal-ore m/gravel m/sand} (.getType b))
+      (.setType b m/wool)
+      (.setData b 8)))
   #_(doseq [[x y z] [[-1 0 0] [1 0 0] [0 -1 0] [0 1 0] [0 0 -1] [0 0 1]]
           :let [b (.getBlock (.add (.getLocation (ujm)) x y z))]]
     (when (#{Material/STONE Material/COAL_ORE Material/IRON_ORE} (.getType b))
@@ -1005,6 +1035,11 @@
                 (.setY velo 0.2)
                 (later (.setVelocity attacker velo)))))))
       (condp = (.getCause evt)
+        #_(EntityDamageEvent$DamageCause/CONTACT)
+        #_(when (and
+                (instance? Villager entity)
+                (= 0 (.getHealth entity)))
+          (c/broadcast "A villager silently died on a cactus."))
         EntityDamageEvent$DamageCause/FALL
         (when (instance? LivingEntity entity)
           (condp instance? entity
