@@ -1227,7 +1227,7 @@
       (new-pin (.getLocation sign)
                (second lines)
                (clojure.string/join "\n" (rest lines))
-               (.getMarkerIcon (marker-api) "sign")
+               (.getMarkerIcon (marker-api) "small-ujm")
                false))))
 
 (defn tmp-fence2wall []
