@@ -26,7 +26,9 @@
            [org.bukkit.util Vector]
            [org.bukkit.block Biome]
            [org.bukkit.event.block Action]
-           [org.bukkit.enchantments Enchantment])
+           [org.bukkit.enchantments Enchantment]
+           [org.dynmap DynmapCommonAPI]
+           [org.dynmap.markers MarkerSet])
   #_(:import #_(twitter.callbacks.protocols SyncSingleCallback)
            [de.ntcomputer.minecraft.controllablemobs.api ControllableMobs]
            [de.ntcomputer.minecraft.controllablemobs.api.actions ActionState
@@ -71,6 +73,17 @@
   (Bukkit/getPlayer "sasanomiya"))
 (defn momonga []
   (Bukkit/getPlayer "supermomonga"))
+
+(defn marker-api []
+  (.getMarkerAPI (.getPlugin (Bukkit/getPluginManager) "dynmap")))
+
+(defn a-marker-set []
+  (first (into #{} (.getMarkerSets (marker-api)))))
+
+(defn new-pin [location label description icon persistant]
+  (.createMarker (a-marker-set) label description (.getName (.getWorld location))
+                 (.getX location) (.getY location) (.getZ location)
+                 icon persistant))
 
 (def special-arrows (atom #{}))
 (defn projectile-hit-event [evt]
@@ -1205,6 +1218,17 @@
                 (= m/glass (.getType (.getHelmet (.getInventory entity)))))
           (.setCancelled evt true))
         nil))))
+
+(defn sign-change-event [evt]
+  (let [lines (vec (.getLines evt))
+        player (.getPlayer evt)
+        sign (.getBlock evt)]
+    (when (= "dynmap" (first lines))
+      (new-pin (.getLocation sign)
+               (second lines)
+               (clojure.string/join "\n" (rest lines))
+               (.getMarkerIcon (marker-api) "sign")
+               false))))
 
 (defn tmp-fence2wall []
   (later (doseq [x (range -10 11)
