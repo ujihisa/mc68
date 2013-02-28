@@ -307,15 +307,60 @@
     (when (= Material/FIRE (.getType (.getBlock (.getLocation item))))
       (prn 'despawn (.getType is)))))
 
+(defn illusion [player duration material1 material2 cont]
+  (let [loc (.getLocation player)
+        locs (for [y [1 0 -1 #_( 2 -2)]
+                   x [0 -1 1 #_(-2)]
+                   z [0 -1 1 #_(-2)]]
+               (.add (.clone loc) x y z))]
+    (future
+      (doseq [[l1 l2] (map vector locs (rest locs))]
+        #_(Thread/sleep duration)
+        (Thread/sleep (* 3 duration))
+        (later
+          (.sendBlockChange player l1 material1 (byte 0))
+          #_(.sendBlockChange player l2 material2 (byte 0))))
+      (cont))))
+
+#_(defn illusion-rand [player materials]
+  (let [loc (.getLocation player)]
+    (doseq [x (range -2 3)
+            y (range -2 3)
+            z (range -2 3)
+            :let [l (.add (.clone loc) x y z)]]
+      (.sendBlockChange player l (rand-nth materials) (byte 0)))))
+
 (def combust-item-queue (atom []))
 
 (defn entity-combust-event [evt]
   (let [entity (.getEntity evt)]
     (when (instance? Item entity)
-      #_(when (= Material/COBBLESTONE (.getType (.getItemStack entity)))
-        (.createExplosion (.getWorld entity) (.getLocation entity) 0.1 false))
       (let [is (.getItemStack entity)]
         (condp = (.getType is)
+          m/smooth-brick
+          (when (= 3 (.getData (.getData is)))
+            #_(fixme! duplicate)
+            (dotimes [_ (.getAmount is)]
+              (let [loc (.getLocation entity)]
+              (loc/play-effect loc Effect/ENDER_SIGNAL nil)
+              (loc/play-sound loc s/piston-extend 1.0 0.5)
+              (let [velo (.getVelocity entity)
+                    new-is (ItemStack. m/cobblestone 64)
+                    new-item (.dropItem (.getWorld entity) (.add (.getLocation entity) 0.0 0.9 0.0) new-is)]
+                (.remove entity)
+                (later (.setVelocity new-item (.add (.multiply velo 1.5)
+                                                    (Vector. 0.0 0.5 0.0))))))))
+          m/cobblestone
+          (when (= 64 (.getAmount is))
+            (let [loc (.getLocation entity)]
+              (loc/play-effect loc Effect/ENDER_SIGNAL nil)
+              (loc/play-sound loc s/piston-extend 1.0 0.5)
+              (let [velo (.getVelocity entity)
+                    new-is (.toItemStack (org.bukkit.material.SmoothBrick. m/smooth-brick (byte 3)) 1)
+                    new-item (.dropItem (.getWorld entity) (.add (.getLocation entity) 0.0 0.9 0.0) new-is)]
+                (.remove entity)
+                (later (.setVelocity new-item (.add (.multiply velo 1.5)
+                                                    (Vector. 0.0 0.5 0.0)))))))
           Material/ROTTEN_FLESH
           (when (= [Material/REDSTONE Material/REDSTONE Material/REDSTONE]
                    (vec (take 3 @combust-item-queue)))
@@ -375,6 +420,15 @@
 
 (defn player-interact-block-event [evt player block]
   (condp = (.getType block)
+    m/furnace
+    (do
+      (when (and
+              (= m/clay-ball (.getType (.getItemInHand player)))
+              (= (ujm) player))
+        (let [inv (.getInventory (.getState block))]
+          (when (nil? (.getSmelting inv))
+            (.setSmelting inv (ItemStack. m/clay-ball 64))
+            (.setFuel inv (ItemStack. m/coal 50))))))
     m/jukebox
     (do
       (when (= Action/RIGHT_CLICK_BLOCK (.getAction evt))
@@ -398,17 +452,29 @@
     m/wood-plate
     (when (= Action/PHYSICAL (.getAction evt))
       (player-physical-wood-plate player block))
-    Material/STONE_PLATE
+    m/stone-plate
     (when (= Action/PHYSICAL (.getAction evt))
       (when (every? (fn [[x y z]]
                       (= Material/GOLD_BLOCK (.getType (.getBlock (.add (.getLocation block) x y z)))))
                     [[0 3 0] [2 0 0] [-2 0 0] [0 0 2] [0 0 -2]])
         (if (= "world" (.getName (.getWorld player)))
-          (later
-            (.strikeLightningEffect (.getWorld block) (.getLocation block))
-            (.strikeLightningEffect (.getWorld city-entrance) city-entrance)
-            (.teleport player city-entrance)
-            (.teleport player city-entrance))
+          (future
+            (loc/play-sound (.getLocation player) s/eat 1.0 1.0)
+            (later
+              (doseq [x (range -10 11)
+                      y (range -3 5)
+                      z (range -10 11)
+                      :let [l (.add (.getLocation block) x y z)
+                            type-from (.getType (.getBlock l))
+                            type-to (get {m/air nil m/torch m/redstone-torch-on} type-from m/stone)]
+                      :when type-to]
+                (.sendBlockChange player l type-to (byte 0))))
+            (Thread/sleep 2000)
+            (later
+              (.strikeLightningEffect (.getWorld block) (.getLocation block))
+              (.strikeLightningEffect (.getWorld city-entrance) city-entrance)
+              (.teleport player city-entrance)
+              (.teleport player city-entrance)))
           (later
             (.strikeLightningEffect (.getWorld block) (.getLocation block))
             (.strikeLightningEffect (.getWorld mozukusoba-house) mozukusoba-house)
@@ -549,7 +615,14 @@
       (when (#{Action/LEFT_CLICK_AIR
                Action/LEFT_CLICK_BLOCK}
               (.getAction evt))
-        (let [blocks (.getLastTwoTargetBlocks player (java.util.HashSet. #{(byte 0) (byte 20) (byte 102)}) 100)]
+        #_(let [blocks (.getLastTwoTargetBlocks player (java.util.HashSet. #{(byte 0) (byte 20) (byte 102)}) 100)]
+          (let [loc (.getLocation (first blocks))]
+            (doseq [x (range -3 4)
+                    y (range -3 4)
+                    z (range -3 4)
+                    :let [b (.getBlock (.add (.clone loc) x y z))]
+                    :when (= m/stone (.getType b))]
+              (.breakNaturally b (ItemStack. m/diamond-pickaxe 1))))
           #_(doseq [block blocks]
             (.strikeLightningEffect (.getWorld block) (.getLocation block)))
           #_(.teleport player (.getLocation (first blocks)))
@@ -647,28 +720,41 @@
 (defn water? [btype]
   (#{Material/STATIONARY_WATER Material/WATER} btype))
 
+(def water-tubing (atom #{}))
 (defn water-tube [player]
   (let [loc0 (.getLocation player)]
     (when (and
+            (not (@water-tubing player))
             (water? (.getType (.getBlock loc0)))
             (= Material/GLASS (.getType (.getBlock (.add (.clone loc0) 0 -1 0)))))
-      (let [target-loc (loop [loc loc0 path [loc0]]
-                         (if (> 300 (count path))
-                           (let [newlocs (for [#_([x y z] [[-1 0 0] [0 -1 0] [0 0 -1] [1 0 0] [0 1 0] [0 0 1]])
-                                               [x z] [[-1 0] [0 -1] [1 0] [0 1]]
-                                               :let [y 0]
-                                               :let [l (.add (.clone loc) x y z)]
-                                               :when (and
-                                                       (water? (.getType (.getBlock l)))
-                                                       (= Material/GLASS (.getType (.getBlock (.add (.clone l) 0 -1 0)))))
-                                               :when (every? #(not= l %) path)]
-                                           l)]
-                             (if-let [newloc (first newlocs)]
-                               (recur newloc (cons newloc path))
-                               loc))
-                           loc))]
+      (let [[target-loc len]
+            (loop [loc loc0 path [loc0]]
+              (if (> 700 (count path))
+                (let [newlocs (for [#_([x y z] [[-1 0 0] [0 -1 0] [0 0 -1] [1 0 0] [0 1 0] [0 0 1]])
+                                    [x z] [[-1 0] [0 -1] [1 0] [0 1]]
+                                    :let [y 0]
+                                    :let [l (.add (.clone loc) x y z)]
+                                    :when (and
+                                            (water? (.getType (.getBlock l)))
+                                            (= Material/GLASS (.getType (.getBlock (.add (.clone l) 0 -1 0)))))
+                                    :when (every? #(not= l %) path)]
+                                l)]
+                  (if-let [newloc (first newlocs)]
+                    (recur newloc (cons newloc path))
+                    [loc (count path)]))
+                [loc (count path)]))]
         (when (not= target-loc loc0)
-          (.teleport player target-loc))))))
+          (swap! water-tubing conj player)
+          (loc/play-sound loc0 s/wither-spawn 1.0 0.0)
+          (illusion player (* 0.5 len) m/portal m/pumpkin (fn []
+            (swap! water-tubing disj player)
+              (later
+              (.teleport player target-loc)
+              (let [c (.getChunk loc0)]
+                (doseq [x (range -1 2)
+                        z (range -1 2)]
+                  (.refreshChunk (.getWorld c) (+ x (.getX c)) (+ z (.getZ c))))))
+                                                    )))))))
 
 (def sneak-players (atom {}))
 (defn player-toggle-sneak-event [evt]
@@ -693,6 +779,14 @@
    Color/RED Color/SILVER Color/TEAL Color/WHITE Color/YELLOW])
 
 (defn ujm-walk []
+  #_(let [b (.getBlock (.add (.getLocation (ujm)) 0 0 -1))]
+    (when (= m/air (.getType b))
+      (.setType b m/step)
+      (.setData b 4)))
+  #_(let [b (.getBlock (.add (.getLocation (ujm)) 0 -1 -1))]
+    (when (= m/air (.getType b))
+      (.setType b m/step)
+      (.setData b 12)))
   #_(doseq [y (range 0 2)
           :let [b (.getBlock (.add (.getLocation (ujm)) 0 y 1))]
           :when (#{m/stone m/coal m/dirt m/gravel m/iron-ore} (.getType b))]
@@ -803,7 +897,6 @@
         (let [helmet (.getHelmet (.getEquipment entity))
               weapon (.getItemInHand (.getEquipment entity))]
           (when (= 0 (rand-int 2))
-            (prn 'dropping)
             (loc/drop-item (.getLocation entity) (ItemStack. m/torch (inc (rand-int 3)))))
           (when (= Material/TNT (.getType helmet))
             (.createExplosion (.getWorld entity) (.getLocation entity) 0.1 false))
@@ -821,11 +914,18 @@
         (tweet-mc68 (format "%s logged in" pname))))))
 
 (defn async-player-chat-event [evt]
-  (let [pname (.getName (.getPlayer evt))
+  (let [player (.getPlayer evt)
+        pname (.getName (.getPlayer evt))
         msg (.getMessage evt)]
     (when (< 1 (count msg))
       (future
         (tweet-mc68 (format "<%s>: %s" pname msg))))
+    (when (and
+            (= "glass-helmet")
+            (= m/glass (.getType (.getItemInHand player)))
+            (nil? (.getHelmet (.getInventory player))))
+      (consume-item player)
+      (.setHelmet (.getInventory player) (ItemStack. m/glass 1)))
     #_(when-let [msg (second (first (re-seq #"^t:\s(.*)" (.getMessage evt))))]
       (future
         (tweet-mc68 (format "<%s>: %s" pname msg))))))
@@ -1098,6 +1198,12 @@
           Player (when (.isSneaking entity)
                    (.setCancelled evt true))
           nil)
+        EntityDamageEvent$DamageCause/DROWNING
+        (when (and
+                (instance? Player entity)
+                (.getHelmet (.getInventory entity))
+                (= m/glass (.getType (.getHelmet (.getInventory entity)))))
+          (.setCancelled evt true))
         nil))))
 
 (defn tmp-fence2wall []
