@@ -933,7 +933,7 @@
     (when (< 1 (count msg))
       (future
         (tweet-mc68 (format "<%s>: %s" pname msg))))
-    (when (and
+    #_(when (and
             (= "glass-helmet")
             (= m/glass (.getType (.getItemInHand player)))
             (nil? (.getHelmet (.getInventory player))))
@@ -1229,6 +1229,20 @@
                (clojure.string/join "\n" (rest lines))
                (.getMarkerIcon (marker-api) "small-ujm")
                false))))
+
+(defn player-drop-item-event [evt]
+  (let [player (.getPlayer evt)
+        item (.getItemDrop evt)
+        is (.getItemStack item)]
+    (when (and
+            (= -90.0 (.getPitch (.getLocation player)))
+            (nil? (.getHelmet (.getInventory player)))
+            (= 1 (.getAmount is)))
+      (.sendMessage player (format "equipping %s" (.getType is)))
+      (later
+        (.setHelmet (.getInventory player) is)
+        (.closeInventory player)
+        (.remove item)))))
 
 (defn tmp-fence2wall []
   (later (doseq [x (range -10 11)
