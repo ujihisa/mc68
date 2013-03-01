@@ -905,7 +905,8 @@
 (defn entity-death-event [evt]
   (let [entity (.getEntity evt)
         killer (.getKiller entity)]
-    (when (instance? Zombie entity)
+    (condp instance? entity
+      Zombie
       (when (instance? Player killer)
         (let [helmet (.getHelmet (.getEquipment entity))
               weapon (.getItemInHand (.getEquipment entity))]
@@ -915,9 +916,14 @@
             (.createExplosion (.getWorld entity) (.getLocation entity) 0.1 false))
             (when (= Material/BOW (.getType weapon))
               (.setDroppedExp evt (+ 10 (.getDroppedExp evt))))))
-      #_(.setDroppedExp evt (int (/ (.getMaxHealth entity) 2))))
-    (when (instance? Giant entity)
-      (.setDroppedExp evt 100))))
+      Giant
+      (.setDroppedExp evt 100)
+      Player
+      (let [inv (.getInventory entity)]
+        (when (= m/tnt (-> inv .getHelmet .getType))
+          (.setHelmet inv nil)
+          (loc/spawn (.getLocation entity) TNTPrimed)))
+      nil)))
 
 (defn player-login-event [evt]
   (let [player (.getPlayer evt)]
