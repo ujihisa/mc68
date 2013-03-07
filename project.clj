@@ -7,6 +7,7 @@
                  [org.clojure/clojure "1.4.0"]
                  [twitter-api "0.6.13"]
                  #_[org.apache.sanselan/sanselan "0.97-incubator"]
-                 [org.dynmap/DynmapCoreAPI "1.5"]]
+                 [org.dynmap/DynmapCoreAPI "1.5"]
+                 #_[org.dynmap/dynmap-api "1.5"]]
   :dev-dependencies [[org.bukkit/bukkit "1.4.7-R1.1-SNAPSHOT"]]
   :java-source-paths ["javasrc"])

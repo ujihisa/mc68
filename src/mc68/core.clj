@@ -5,7 +5,8 @@
             [cloft.sound :as s]
             [cloft.loc :as loc]
             [cloft.material :as m]
-            [cloft.cloft :as c])
+            [cloft.cloft :as c]
+            [clj-http.client])
   (:import [org.bukkit Bukkit DyeColor Material Color Location Effect]
            [org.bukkit.material Wool Dye]
            [org.bukkit.entity Animals Arrow Blaze Boat CaveSpider Chicken
@@ -44,12 +45,12 @@
 
 (def oauth (clojure.string/split #"\n" (strip "oauth")))
 
-(defmacro later [& exps]
+(defmacro later [sec & exps]
   `(.scheduleSyncDelayedTask
      (Bukkit/getScheduler)
      mc68.core/plugin*
      (fn [] ~@exps)
-     0))
+     (int (* 20 ~sec))))
 
 (defn tweet-mc68 [msg]
   (let [creds (twitter.oauth/make-oauth-creds oauth)]
@@ -163,7 +164,7 @@
             (future
               (dotimes [_ 5]
                 (Thread/sleep 500)
-                (later
+                (later 0
                   (dosync (ref-set skeleton-shooting true))
                   (.launchProjectile shooter Arrow)
                   (dosync (ref-set skeleton-shooting false)))))
@@ -182,10 +183,11 @@
               (= -0.0784000015258789 (.getY (.getVelocity shooter)))
               (.isLiquid (.getBlock (.getLocation shooter))))
           (when (and
-                  (#{(ujm) (mozukusoba)} shooter)
+                  (or (ujm) (mozukusoba))
+                  (#{ (mozukusoba)} shooter)
                   (not (.isSneaking shooter)))
             (swap! special-arrows conj projectile))
-          (later
+          (later 0
             (.setVelocity shooter (.multiply (.getVelocity projectile) -0.7))))
         nil)
       nil)))
@@ -328,7 +330,7 @@
       (doseq [[l1 l2] (map vector locs (rest locs))]
         #_(Thread/sleep duration)
         (Thread/sleep (* 3 duration))
-        (later
+        (later 0
           (.sendBlockChange player l1 material1 (byte 0))
           #_(.sendBlockChange player l2 material2 (byte 0))))
       (cont))))
@@ -359,7 +361,7 @@
                     new-is (ItemStack. m/cobblestone 64)
                     new-item (.dropItem (.getWorld entity) (.add (.getLocation entity) 0.0 0.9 0.0) new-is)]
                 (.remove entity)
-                (later (.setVelocity new-item (.add (.multiply velo 1.5)
+                (later 0 (.setVelocity new-item (.add (.multiply velo 1.5)
                                                     (Vector. 0.0 0.5 0.0))))))))
           m/cobblestone
           (when (= 64 (.getAmount is))
@@ -370,7 +372,7 @@
                     new-is (.toItemStack (org.bukkit.material.SmoothBrick. m/smooth-brick (byte 3)) 1)
                     new-item (.dropItem (.getWorld entity) (.add (.getLocation entity) 0.0 0.9 0.0) new-is)]
                 (.remove entity)
-                (later (.setVelocity new-item (.add (.multiply velo 1.5)
+                (later 0 (.setVelocity new-item (.add (.multiply velo 1.5)
                                                     (Vector. 0.0 0.5 0.0)))))))
           Material/ROTTEN_FLESH
           (when (= [Material/REDSTONE Material/REDSTONE Material/REDSTONE]
@@ -382,12 +384,12 @@
               (future
                 (dotimes [_ 5]
                   (Thread/sleep 1000)
-                  (later (.spawn (.getWorld loc) loc klass))))))
+                  (later 0 (.spawn (.getWorld loc) loc klass))))))
           Material/RAW_BEEF
           (let [velo (.getVelocity entity)
                 new-item (.dropItem (.getWorld entity) (.add (.getLocation entity) 0.0 0.9 0.0) (ItemStack. Material/COOKED_BEEF (.getAmount is)))]
             (.remove entity)
-            (later (.setVelocity new-item (.add (.multiply velo 1.5)
+            (later 0 (.setVelocity new-item (.add (.multiply velo 1.5)
                                                 (Vector. 0.0 0.5 0.0)))))
           Material/COOKED_BEEF
           (do
@@ -448,7 +450,7 @@
                 (not (.isPlaying (.getState block))))
           (future
             (Thread/sleep 100)
-            (later
+            (later 0
               (doseq [v (.getNearbyEntities player 15 15 15)
                       :when (instance? Villager v)]
                 (.damage v 30)))))))
@@ -471,7 +473,7 @@
         (if (= "world" (.getName (.getWorld player)))
           (future
             (loc/play-sound (.getLocation player) s/eat 1.0 1.0)
-            (later
+            (later 0
               (doseq [x (range -10 11)
                       y (range -3 5)
                       z (range -10 11)
@@ -481,12 +483,12 @@
                       :when type-to]
                 (.sendBlockChange player l type-to (byte 0))))
             (Thread/sleep 2000)
-            (later
+            (later 0
               (.strikeLightningEffect (.getWorld block) (.getLocation block))
               (.strikeLightningEffect (.getWorld city-entrance) city-entrance)
               (.teleport player city-entrance)
               (.teleport player city-entrance)))
-          (later
+          (later 0
             (.strikeLightningEffect (.getWorld block) (.getLocation block))
             (.strikeLightningEffect (.getWorld mozukusoba-house) mozukusoba-house)
             (.teleport player mozukusoba-house)
@@ -617,7 +619,7 @@
                         [0])
                     :let [new-type m/wood]]
               (Thread/sleep 100)
-              (later
+              (later 0
                 (loc/play-effect loc Effect/MOBSPAWNER_FLAMES nil)
                 (let [target-block (.getBlock (.add (.clone loc) x y z))]
                   (when (= m/air (.getType target-block))
@@ -696,7 +698,7 @@
         (comment
           (.setCancelled evt true)
           (let [vehicle (.getVehicle entity)]
-            (later (.setPassenger vehicle (.spawn (.getWorld vehicle) (.getLocation vehicle) TNTPrimed)))))
+            (later 0 (.setPassenger vehicle (.spawn (.getWorld vehicle) (.getLocation vehicle) TNTPrimed)))))
         (let [lapises (filter #(= Material/LAPIS_BLOCK (.getType %)) (vec (.blockList evt)))]
           (.setCancelled evt true)
           (if (empty? lapises)
@@ -759,7 +761,7 @@
           (loc/play-sound loc0 s/wither-spawn 1.0 0.0)
           (illusion player (* 0.5 len) m/portal m/pumpkin (fn []
             (swap! water-tubing disj player)
-              (later
+              (later 0
               (.teleport player target-loc)
               (let [c (.getChunk loc0)]
                 (doseq [x (range -1 2)
@@ -794,10 +796,10 @@
     (when (= m/air (.getType b))
       (.setType b m/step)
       (.setData b 4)))
-  #_(let [b (.getBlock (.add (.getLocation (ujm)) 0 -1 -1))]
-    (when (= m/air (.getType b))
-      (.setType b m/step)
-      (.setData b 12)))
+  #_(let [b (.getBlock (.add (.getLocation (ujm)) 0 -1 0))]
+    (when (#{m/grass} (.getType b))
+      (.setType b m/dirt)
+      #_(.setData b 12)))
   #_(doseq [y (range 0 2)
           :let [b (.getBlock (.add (.getLocation (ujm)) 0 y 1))]
           :when (#{m/stone m/coal m/dirt m/gravel m/iron-ore} (.getType b))]
@@ -812,14 +814,14 @@
     (when (#{Material/STONE Material/COAL_ORE Material/IRON_ORE} (.getType b))
       (future
         (Thread/sleep 100)
-        (later (.setType b Material/AIR)))))
+        (later 0 (.setType b Material/AIR)))))
   #_(when (.isSprinting (ujm))
     (doseq [[x z] [[-1 0] [1 0] [0 -1] [0 1]]
             :let [b (.getBlock (.add (.getLocation (ujm)) x -1 z))]
             :when (= Material/SMOOTH_BRICK (.getType b))]
       (future
         (Thread/sleep 1000)
-        (later (.setType b Material/WATER)))))
+        (later 0 (.setType b Material/WATER)))))
   #_(let [b (.getBlock (.getLocation (ujm)))]
     (when (= Material/AIR (.getType b))
       (.setType b Material/VINE)))
@@ -827,7 +829,7 @@
     (let [b (.getBlock (.getLocation (ujm)))]
       (future
         (Thread/sleep 2000)
-        (later (.setType b Material/FENCE)))))
+        (later 0 (.setType b Material/FENCE)))))
   #_(when (.isSprinting (ujm))
     (let [loc1 (.add (.getLocation (ujm)) 0 -1 0)
           loc2 (.add (.getLocation (ujm)) 0 -2 0)]
@@ -855,7 +857,7 @@
           (when (#{Material/DIRT Material/STONE Material/COAL_ORE Material/IRON_ORE} (.getType b))
             (.setType b Material/AIR)#_(future
               (Thread/sleep 200)
-              (later (.setType b Material/AIR)))))))
+              (later 0 (.setType b Material/AIR)))))))
     (when (= Material/TORCH (.getType (.getItemInHand player)))
       (doseq [x (range 0 1)
               z (range 0 1)
@@ -918,9 +920,10 @@
       (.setDroppedExp evt 100)
       Player
       (let [inv (.getInventory entity)]
-        (when (= m/tnt (-> inv .getHelmet .getType))
-          (.setHelmet inv nil)
-          (loc/spawn (.getLocation entity) TNTPrimed)))
+        (when-let [helmet (.getHelmet inv)]
+          (when (= m/tnt (.getType helmet))
+            (.setHelmet inv nil)
+            (loc/spawn (.getLocation entity) TNTPrimed))))
       nil)))
 
 (defn player-login-event [evt]
@@ -936,7 +939,8 @@
         msg (.getMessage evt)]
     (when (< 1 (count msg))
       (future
-        (tweet-mc68 (format "<%s>: %s" pname msg))))
+        (tweet-mc68 (format "<%s>: %s" pname msg))
+        (clj-http.client/post "http://lingr.com/api/room/say?app_key=rCTrCc" {:form-params {:room "computer_science" :text (format "#_%s %s" pname msg) :session "xB0GjR"}})))
     #_(when (and
             (= "glass-helmet")
             (= m/glass (.getType (.getItemInHand player)))
@@ -946,6 +950,16 @@
     #_(when-let [msg (second (first (re-seq #"^t:\s(.*)" (.getMessage evt))))]
       (future
         (tweet-mc68 (format "<%s>: %s" pname msg))))))
+
+(defn dynmap-web-chat-event [evt]
+  (let [msg (.getMessage evt)]
+    (when-let [[_ xs _ zs] (re-matches #"\{\"x\":([^,]+),\"y\":([^,]+),\"z\":([^,]+)}" msg)]
+      (let [x (Double/parseDouble xs)
+            z (Double/parseDouble zs)
+            loc (Location. (Bukkit/getWorld "world") x 71 z)]
+        (later 3
+               (.strikeLightningEffect (.getWorld loc) loc)))
+      (.setCancelled evt true))))
 
 (def ml-insts
   '#{me you message accelerate into heal up down right left hp delay teleport})
@@ -1075,7 +1089,7 @@
           'delay (future
                    (try
                      (Thread/sleep (min 10000 (* 100 (dosync (ml-pop stack)))))
-                     (later (ml-eval player target stack tokens))
+                     (later 0 (ml-eval player target stack tokens))
                      (catch Exception e (prn 'in-delay e))))
           'hp (dosync
                 (ml-push (.getHealth (ml-pop stack)) stack)
@@ -1087,7 +1101,7 @@
                     (clojure.string/split (clojure.string/join " " (.getPages (.getItemMeta book))) #"\s+"))
         stack (ref [])]
     (if (ml-valid? tokens)
-      (later
+      (later 0
         (try
           (ml-eval player target stack tokens)
           (show-current-mp player)
@@ -1139,7 +1153,7 @@
       (do
         (.setDamage evt 0)
         (let [loc (.getLocation entity)]
-          (later
+          (later 0
             (.teleport entity loc)
             (.setVelocity entity (Vector. 0 0 0)))
           (when-let [attacker (try (.getDamager evt) (catch Exception e nil))]
@@ -1150,7 +1164,7 @@
                                        (.subtract (.getLocation attacker)
                                                   (.clone loc)))) ]
                 (.setY velo 0.2)
-                (later (.setVelocity attacker velo)))))))
+                (later 0 (.setVelocity attacker velo)))))))
       (condp = (.getCause evt)
         #_(EntityDamageEvent$DamageCause/CONTACT)
         #_(when (and
@@ -1228,6 +1242,7 @@
         player (.getPlayer evt)
         sign (.getBlock evt)]
     (when (= "dynmap" (first lines))
+      (prn 'new-pin player)
       (new-pin (.getLocation sign)
                (second lines)
                (clojure.string/join "\n" (rest lines))
@@ -1243,13 +1258,13 @@
             (nil? (.getHelmet (.getInventory player)))
             (= 1 (.getAmount is)))
       (.sendMessage player (format "equipping %s" (.getType is)))
-      (later
+      (later 0
         (.setHelmet (.getInventory player) is)
         (.closeInventory player)
         (.remove item)))))
 
 (defn tmp-fence2wall []
-  (later (doseq [x (range -10 11)
+  (later 0 (doseq [x (range -10 11)
                  z (range -10 11)
                  :let [loc (.add (.getLocation (ujm)) x 0 z)]
                  :when (= Material/FENCE (.getType (.getBlock loc)))
@@ -1291,6 +1306,7 @@
     is))
 
 (defn periodically1sec []
+  #_(.launchProjectile (momonga) Arrow)
   (when-let [player (ujm)]
     (when-let [armor (.getChestplate (.getInventory player))]
       (when (= Material/LEATHER_CHESTPLATE (.getType armor))
@@ -1328,7 +1344,7 @@
             :let [arrow (.launchProjectile slime Arrow)]]
       (.setVelocity arrow vect)
       (when (< 2 (.getSize slime))
-        (later (.setFireTicks arrow 20))))))
+        (later 0 (.setFireTicks arrow 20))))))
 
 (defonce swank* nil)
 (defonce t* nil)
