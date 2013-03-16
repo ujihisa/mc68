@@ -1154,101 +1154,105 @@
 (defmacro conj-entity-damage-event [& exps]
   `(swap! entity-damage-event-registered conj (fn ~@exps)))
 
-(cons-entity-damage-event [evt]
+(conj-entity-damage-event [evt]
   (let [entity (.getEntity evt)
         loc (.getLocation entity)]
-    (if (and (instance? LivingEntity entity)
+    (when (and (instance? LivingEntity entity)
              (= m/gold-block
                 (.getType (.getBlock (.add (.clone loc) 0.0 -1.0 0.0)))))
-      (do
-        (.setDamage evt 0)
-        (let [loc (.getLocation entity)]
-          (later 0
-            (.teleport entity loc)
-            (.setVelocity entity (Vector. 0 0 0)))
-          (when-let [attacker (try (.getDamager evt) (catch Exception e nil))]
-            (when (instance? LivingEntity attacker)
-              #_(loc/play-sound (.getLocation attacker) s/door-close 1.0 2.0)
-              (loc/play-sound (.getLocation (ujm)) s/piston-extend 1.0 2.0)
-              (let [velo (.normalize (.toVector
-                                       (.subtract (.getLocation attacker)
-                                                  (.clone loc)))) ]
-                (.setY velo 0.2)
-                (later 0 (.setVelocity attacker velo)))))))
-      (condp = (.getCause evt)
-        #_(EntityDamageEvent$DamageCause/CONTACT)
-        #_(when (and
-                  (instance? Villager entity)
-                  (= 0 (.getHealth entity)))
-          (c/broadcast "A villager silently died on a cactus."))
-        EntityDamageEvent$DamageCause/FALL
-        (when (instance? LivingEntity entity)
-          (condp instance? entity
-            Spider
-            (.setCancelled evt true)
-            (let [block (.getBlock loc)
-                  block-below (.getBlock (.add (.clone loc) 0 -1 0))]
-              (cond
-                (= Material/GRASS (.getType block-below))
-                (do
-                  (.setCancelled evt true)
-                  (.setType block-below Material/DIRT)
-                  (.setVelocity entity (.add (.getVelocity entity) (Vector. 0.0 0.4 0.0))))
-                (= Material/BED_BLOCK (.getType block))
-                (do
-                  (.setCancelled evt true)
-                  (when-not (.isSneaking entity)
-                    (.setVelocity entity (doto (.getVelocity entity)
-                                           (.setY 0.9)))))))))
-        EntityDamageEvent$DamageCause/PROJECTILE
-        (let [attacker (.getDamager evt)]
-          (when-let [shooter (.getShooter attacker)]
-            #_(when (and (instance? Player shooter)
-                         (instance? Player entity))
-              (loc/explode (.getLocation entity) 0 false))
-            (when (and
-                    (instance? Snowball attacker)
-                    (< 0 (.getFireTicks attacker)))
-              (.setFireTicks entity 200)
-              (.damage entity 1 shooter)))
-          (when (and
-                  (instance? Slime entity)
-                  (instance? Arrow attacker))
-            (.remove attacker)
-            (.setCancelled evt true))
-          (when (instance? Giant entity)
-            (let [weapon (if-let [shooter (.getShooter attacker)]
-                           (when (instance? Player shooter)
-                             (.getItemInHand shooter))
-                           nil)]
-              (dotimes [i (rand-nth [0 0 0 3 5])]
-                (.setItemInHand (.getEquipment
-                                  (.spawn (.getWorld entity) (.getLocation entity) Zombie))
-                                weapon)))))
-        EntityDamageEvent$DamageCause/ENTITY_ATTACK
-        (when-let [attacker (.getDamager evt)]
-          (zombie-chestplate-break-handler evt entity attacker)
-          (when (and
-                  (instance? Player attacker)
-                  (.getItemInHand attacker)
-                  (= Material/BOOK_AND_QUILL (.getType (.getItemInHand attacker))))
-            (player-use-book-event attacker entity (.getItemInHand attacker))))
-        EntityDamageEvent$DamageCause/BLOCK_EXPLOSION
+      (.setDamage evt 0)
+      (let [loc (.getLocation entity)]
+        (later 0
+          (.teleport entity loc)
+          (.setVelocity entity (Vector. 0 0 0)))
+        (when-let [attacker (try (.getDamager evt) (catch Exception e nil))]
+          (when (instance? LivingEntity attacker)
+            #_(loc/play-sound (.getLocation attacker) s/door-close 1.0 2.0)
+            (loc/play-sound (.getLocation (ujm)) s/piston-extend 1.0 2.0)
+            (let [velo (.normalize (.toVector
+                                     (.subtract (.getLocation attacker)
+                                                (.clone loc)))) ]
+              (.setY velo 0.2)
+              (later 0 (.setVelocity attacker velo))))))
+      :stop)))
+
+(conj-entity-damage-event [evt]
+  (let [entity (.getEntity evt)
+        loc (.getLocation entity)]
+    (condp = (.getCause evt)
+      #_(EntityDamageEvent$DamageCause/CONTACT)
+      #_(when (and
+                (instance? Villager entity)
+                (= 0 (.getHealth entity)))
+        (c/broadcast "A villager silently died on a cactus."))
+      EntityDamageEvent$DamageCause/FALL
+      (when (instance? LivingEntity entity)
         (condp instance? entity
-          Minecart (.setCancelled evt true)
-          Player (when (.isSneaking entity)
-                   (.setCancelled evt true))
-          nil)
-        EntityDamageEvent$DamageCause/DROWNING
+          Spider
+          (.setCancelled evt true)
+          (let [block (.getBlock loc)
+                block-below (.getBlock (.add (.clone loc) 0 -1 0))]
+            (cond
+              (= Material/GRASS (.getType block-below))
+              (do
+                (.setCancelled evt true)
+                (.setType block-below Material/DIRT)
+                (.setVelocity entity (.add (.getVelocity entity) (Vector. 0.0 0.4 0.0))))
+              (= Material/BED_BLOCK (.getType block))
+              (do
+                (.setCancelled evt true)
+                (when-not (.isSneaking entity)
+                  (.setVelocity entity (doto (.getVelocity entity)
+                                         (.setY 0.9)))))))))
+      EntityDamageEvent$DamageCause/PROJECTILE
+      (let [attacker (.getDamager evt)]
+        (when-let [shooter (.getShooter attacker)]
+          #_(when (and (instance? Player shooter)
+                       (instance? Player entity))
+            (loc/explode (.getLocation entity) 0 false))
+          (when (and
+                  (instance? Snowball attacker)
+                  (< 0 (.getFireTicks attacker)))
+            (.setFireTicks entity 200)
+            (.damage entity 1 shooter)))
         (when (and
-                (instance? Player entity)
-                (.getHelmet (.getInventory entity))
-                (= m/glass (.getType (.getHelmet (.getInventory entity)))))
+                (instance? Slime entity)
+                (instance? Arrow attacker))
+          (.remove attacker)
           (.setCancelled evt true))
-        nil))))
+        (when (instance? Giant entity)
+          (let [weapon (if-let [shooter (.getShooter attacker)]
+                         (when (instance? Player shooter)
+                           (.getItemInHand shooter))
+                         nil)]
+            (dotimes [i (rand-nth [0 0 0 3 5])]
+              (.setItemInHand (.getEquipment
+                                (.spawn (.getWorld entity) (.getLocation entity) Zombie))
+                              weapon)))))
+      EntityDamageEvent$DamageCause/ENTITY_ATTACK
+      (when-let [attacker (.getDamager evt)]
+        (zombie-chestplate-break-handler evt entity attacker)
+        (when (and
+                (instance? Player attacker)
+                (.getItemInHand attacker)
+                (= Material/BOOK_AND_QUILL (.getType (.getItemInHand attacker))))
+          (player-use-book-event attacker entity (.getItemInHand attacker))))
+      EntityDamageEvent$DamageCause/BLOCK_EXPLOSION
+      (condp instance? entity
+        Minecart (.setCancelled evt true)
+        Player (when (.isSneaking entity)
+                 (.setCancelled evt true))
+        nil)
+      EntityDamageEvent$DamageCause/DROWNING
+      (when (and
+              (instance? Player entity)
+              (.getHelmet (.getInventory entity))
+              (= m/glass (.getType (.getHelmet (.getInventory entity)))))
+        (.setCancelled evt true))
+      nil)))
 
 (defn entity-damage-event [evt]
-  (every? #(% evt) @entity-damage-event-registered))
+  (every? #(not= (% evt) :stop) @entity-damage-event-registered))
 
 (defn sign-change-event [evt]
   (let [lines (vec (.getLines evt))
