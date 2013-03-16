@@ -4,7 +4,7 @@ A Clojure library designed to ... well, that part is up to you.
 
 ## Usage
 
-FIXME
+twitter oauth info: place src/oauth.txt in 4 lines
 
 ## License
 

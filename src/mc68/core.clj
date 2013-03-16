@@ -43,7 +43,10 @@
 (defonce plugin* nil)
 (def creative (atom #{}))
 
-(def oauth (clojure.string/split #"\n" (strip "oauth")))
+(def oauth
+  (try
+    (clojure.string/split (slurp (clojure.java.io/resource "oauth.txt")) #"\n" 4)
+    (catch Exception e nil)))
 
 (defmacro later [sec & exps]
   `(.scheduleSyncDelayedTask
@@ -53,8 +56,9 @@
      (int (* 20 ~sec))))
 
 (defn tweet-mc68 [msg]
-  (let [creds (twitter.oauth/make-oauth-creds oauth)]
-    (twitter.api.restful/update-status :oauth-creds creds :params {:status msg})))
+  (when oauth
+    (let [creds (apply twitter.oauth/make-oauth-creds oauth)]
+      (twitter.api.restful/update-status :oauth-creds creds :params {:status msg}))))
 
 (defn ujm []
   (Bukkit/getPlayer "ujm"))
