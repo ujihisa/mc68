@@ -1148,7 +1148,13 @@
                      (.setCursor evt (ItemStack. m/book-and-quill 1)))
         (>= 9 slot) 1#_(prn slot player (.getType is) (.getHolder inventory))))))
 
-(defn entity-damage-event [evt]
+(def entity-damage-event-registered (atom []))
+(defmacro cons-entity-damage-event [& exps]
+  `(swap! entity-damage-event-registered #(cons (fn ~@exps) %)))
+(defmacro conj-entity-damage-event [& exps]
+  `(swap! entity-damage-event-registered conj (fn ~@exps)))
+
+(cons-entity-damage-event [evt]
   (let [entity (.getEntity evt)
         loc (.getLocation entity)]
     (if (and (instance? LivingEntity entity)
@@ -1172,8 +1178,8 @@
       (condp = (.getCause evt)
         #_(EntityDamageEvent$DamageCause/CONTACT)
         #_(when (and
-                (instance? Villager entity)
-                (= 0 (.getHealth entity)))
+                  (instance? Villager entity)
+                  (= 0 (.getHealth entity)))
           (c/broadcast "A villager silently died on a cactus."))
         EntityDamageEvent$DamageCause/FALL
         (when (instance? LivingEntity entity)
@@ -1198,7 +1204,7 @@
         (let [attacker (.getDamager evt)]
           (when-let [shooter (.getShooter attacker)]
             #_(when (and (instance? Player shooter)
-                       (instance? Player entity))
+                         (instance? Player entity))
               (loc/explode (.getLocation entity) 0 false))
             (when (and
                     (instance? Snowball attacker)
@@ -1240,6 +1246,9 @@
                 (= m/glass (.getType (.getHelmet (.getInventory entity)))))
           (.setCancelled evt true))
         nil))))
+
+(defn entity-damage-event [evt]
+  (every? #(% evt) @entity-damage-event-registered))
 
 (defn sign-change-event [evt]
   (let [lines (vec (.getLines evt))
