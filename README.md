@@ -6,7 +6,7 @@ A Clojure library designed to ... well, that part is up to you.
 
 twitter oauth info: place src/oauth.txt in 4 lines
 
-    let b:clojure_indent_special = '^cons-\|later'
+    let b:clojure_indent_special = '^con[sj]-\|later'
 
 ## License
 
