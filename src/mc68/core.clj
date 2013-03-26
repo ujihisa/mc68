@@ -181,7 +181,8 @@
             :else nil))
         Player
         (if (or
-              (= -0.0784000015258789 (.getY (.getVelocity shooter)))
+              (.isOnGround shooter)
+              #_(= -0.0784000015258789 (.getY (.getVelocity shooter)))
               (.isLiquid (.getBlock (.getLocation shooter))))
           (when (and
                   (or (ujm) (mozukusoba))
