@@ -1284,7 +1284,7 @@
   (let [^Hanging hanging (.getEntity evt)
         remover (.getRemover evt)]
     (when (and
-            (instance? Painting entity)
+            (instance? Painting hanging)
             (instance? Player remover))
       (prn 'player-broke-paint (.getArt hanging)))))
 
