@@ -1155,6 +1155,7 @@
   `(swap! entity-damage-event-registered conj (fn ~@exps)))
 
 (conj-entity-damage-event [evt]
+  'gold-block-no-falling-damage
   (let [entity (.getEntity evt)
         loc (.getLocation entity)]
     (when (and (instance? LivingEntity entity)
@@ -1177,6 +1178,7 @@
       :stop)))
 
 (conj-entity-damage-event [evt]
+  'other-stuff
   (let [entity (.getEntity evt)
         loc (.getLocation entity)]
     (condp = (.getCause evt)
