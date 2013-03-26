@@ -152,11 +152,8 @@
         #_(dotimes [_ (.getAmount (.getItemInHand shooter))]
           (.launchProjectile shooter Egg))
         (dotimes [i (.getAmount (.getItemInHand shooter))]
-          (.scheduleSyncDelayedTask
-            (Bukkit/getScheduler)
-            plugin*
-            #(.launchProjectile shooter Egg)
-            i))
+          (later i
+            (.launchProjectile shooter Egg)))
         (.setItemInHand shooter nil)
         #_(.sendMessage shooter (format "egg %d" (.getAmount (.getItemInHand shooter)))))
       Arrow
@@ -1421,3 +1418,4 @@
 ; EnderDragon
 ; Witch
 ; Wither
+; vim: set lispwords+=later :
