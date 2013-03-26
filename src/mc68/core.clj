@@ -19,7 +19,7 @@
             Skeleton Slime SmallFireball Snowball Snowman Spider Squid
             StorageMinecart ThrownPotion TNTPrimed Vehicle Villager
             Villager$Profession WaterMob Weather Wolf Zombie Ocelot
-            Bat]
+            Bat Hanging]
            [org.bukkit.event.entity EntityDamageByEntityEvent
             EntityDamageEvent$DamageCause CreatureSpawnEvent$SpawnReason]
            [org.bukkit.potion Potion PotionEffect PotionEffectType]
@@ -1279,6 +1279,14 @@
         (.setHelmet (.getInventory player) is)
         (.closeInventory player)
         (.remove item)))))
+
+(defn hanging-break-by-entity-event [evt]
+  (let [^Hanging hanging (.getEntity evt)
+        remover (.getRemover evt)]
+    (when (and
+            (instance? Painting entity)
+            (instance? Player remover))
+      (prn 'player-broke-paint (.getArt hanging)))))
 
 (defn tmp-fence2wall []
   (later 0 (doseq [x (range -10 11)
