@@ -870,6 +870,19 @@
                       (> 8 (.getLightLevel b)))]
         (consume-item player)
         (.setType b Material/TORCH)))
+    (when (and
+            (.isSneaking player)
+            (not (.isOnGround player)))
+      (when-let [painting (first
+                            (filter #(instance? Painting %)
+                                    (.getNearbyEntities player 0.5 0.5 0.5)))]
+        (.sendMessage player (str (.getArt painting)))
+        (let [loc-to
+              (case (.getName (.getWorld player))
+                "world" (.getSpawnLocation (Bukkit/getWorld "world_supermomonga"))
+                mozukusoba-house)]
+          (.load (.getChunk loc-to))
+          (.teleport player loc-to))))
     (if (and
           (.isSneaking player)
           (= Material/LADDER (.getType (.getBlock (.getLocation player))))
