@@ -185,8 +185,11 @@
               #_(= -0.0784000015258789 (.getY (.getVelocity shooter)))
               (.isLiquid (.getBlock (.getLocation shooter))))
           (when (and
-                  (or (ujm) (mozukusoba))
-                  (#{ (mozukusoba)} shooter)
+                  (or
+                    (and
+                      (or (ujm) (mozukusoba))
+                      (#{(ujm) (mozukusoba)} shooter))
+                    (= "world_supermomonga" (.getName (.getWorld shooter))))
                   (not (.isSneaking shooter)))
             (swap! special-arrows conj projectile))
           (later 0
@@ -237,6 +240,10 @@
       (player-ride-spider player target)
       Slime
       (player-give-slimeball-to-slime player target)
+      Painting
+      (let [art (rand-nth (vec (org.bukkit.Art/values)))]
+        (.sendMessage player (str art))
+        (.setArt target art))
       nil)))
 
 (def mozukusoba-house
@@ -775,6 +782,17 @@
 (defn player-toggle-sneak-event [evt]
   (when (.isSneaking evt)
     (let [player (.getPlayer evt)]
+      (when (not (.isOnGround player))
+        (when-let [painting (first
+                              (filter #(instance? Painting %)
+                                      (.getNearbyEntities player 0.5 0.5 0.5)))]
+          (.sendMessage player (str (.getArt painting)))
+          (let [loc-to
+                (case (.getName (.getWorld player))
+                  "world" (.getSpawnLocation (Bukkit/getWorld "world_supermomonga"))
+                  mozukusoba-house)]
+            (.load (.getChunk loc-to))
+            (.teleport player loc-to))))
       (swap! sneak-players update-in [player] (fnil inc 0))
       (future
         (Thread/sleep 2000)
@@ -870,19 +888,6 @@
                       (> 8 (.getLightLevel b)))]
         (consume-item player)
         (.setType b Material/TORCH)))
-    (when (and
-            (.isSneaking player)
-            (not (.isOnGround player)))
-      (when-let [painting (first
-                            (filter #(instance? Painting %)
-                                    (.getNearbyEntities player 0.5 0.5 0.5)))]
-        (.sendMessage player (str (.getArt painting)))
-        (let [loc-to
-              (case (.getName (.getWorld player))
-                "world" (.getSpawnLocation (Bukkit/getWorld "world_supermomonga"))
-                mozukusoba-house)]
-          (.load (.getChunk loc-to))
-          (.teleport player loc-to))))
     (if (and
           (.isSneaking player)
           (= Material/LADDER (.getType (.getBlock (.getLocation player))))
