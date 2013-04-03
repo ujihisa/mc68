@@ -704,8 +704,13 @@
       (doseq [block blocks]
         (.setType block (rand-nth random-block-candidates))))))
 
+(defn creeper-explode-event [evt entity]
+  (prn 'creeper 'explode evt entity))
+
 (defn entity-explode-event [evt]
   (let [entity (.getEntity evt)]
+    (when (instance? Creeper entity)
+      (creeper-explode-event evt entity))
     (when (instance? TNTPrimed entity)
       (if (when-let [vehicle (.getVehicle entity)]
             (instance? Minecart vehicle))
