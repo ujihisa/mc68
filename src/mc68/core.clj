@@ -274,6 +274,11 @@
 (defn creature-spawn-event [evt]
   (let [entity (.getEntity evt)]
     (condp instance? entity
+      PigZombie
+      (when (= "world_nether" (.getName (.getWorld entity)))
+        (when (= (rand-int 3) 0)
+          (.setCancelled evt true)
+          (.setPowered (loc/spawn (.getLocation evt) Creeper) true)))
       Zombie
       (do
         (condp = (.getSpawnReason evt)
