@@ -2,7 +2,7 @@
   :description "FIXME: write description"
   :url "http://example.com/FIXME"
   :license {:name "GPL-3 or later"}
-  :dependencies [[cloft "1.0.0-SNAPSHOT"]
+  :dependencies [[cloft "1.1.0-SNAPSHOT"]
                  [org.clojure/clojure "1.5.1"]
                  [twitter-api "0.6.13"]
                  #_[org.apache.sanselan/sanselan "0.97-incubator"]
