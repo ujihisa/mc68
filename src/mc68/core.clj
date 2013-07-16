@@ -1,7 +1,6 @@
 (ns mc68.core
   (:require [twitter.oauth]
             [twitter.api.restful]
-            [swank.swank]
             [cloft.sound :as s]
             [cloft.loc :as loc]
             [cloft.material :as m]
@@ -1399,13 +1398,10 @@
       (when (< 2 (.getSize slime))
         (later 0 (.setFireTicks arrow 20))))))
 
-(defonce swank* nil)
 (defonce t* nil)
 (defn on-enable [plugin]
   (def plugin* plugin)
   (swap! creative conj "ujm")
-  (when-not swank*
-    (def swank* (swank.swank/start-repl 4006)))
   (.scheduleSyncRepeatingTask (Bukkit/getScheduler) plugin* #'periodically1sec 0 20)
   (def t*
     (.scheduleSyncRepeatingTask (Bukkit/getScheduler) plugin* #'periodically1tick 0 1)))
